@@ -1,0 +1,1 @@
+/home/gurman/studentapp_new/android/app/build/intermediates/cxx/Debug/3b546q2j/obj/armeabi-v7a

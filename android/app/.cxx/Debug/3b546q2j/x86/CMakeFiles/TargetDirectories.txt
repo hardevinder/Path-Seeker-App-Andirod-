@@ -1,0 +1,2 @@
+/home/gurman/studentapp_new/android/app/.cxx/Debug/3b546q2j/x86/CMakeFiles/edit_cache.dir
+/home/gurman/studentapp_new/android/app/.cxx/Debug/3b546q2j/x86/CMakeFiles/rebuild_cache.dir
