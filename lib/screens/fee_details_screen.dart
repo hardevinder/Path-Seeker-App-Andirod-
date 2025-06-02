@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../widgets/student_drawer_menu.dart';
 
 class FeeDetailsScreen extends StatefulWidget {
   const FeeDetailsScreen({super.key});
@@ -178,12 +179,29 @@ class _FeeDetailsScreenState extends State<FeeDetailsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Fee Details"),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+        backgroundColor: const Color(0xFF1976D2),
+        elevation: 6,
+        shadowColor: Colors.black.withOpacity(0.3),
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(Icons.menu, color: Colors.white, size: 26),
+            onPressed: () {
+              Scaffold.of(context).openDrawer();
+            },
+          ),
+        ),
+        centerTitle: true,
+        title: const Text(
+          'Fee Details',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.1,
+            color: Colors.white,
+          ),
         ),
       ),
+      drawer: const StudentDrawerMenu(),
       body: RefreshIndicator(
         onRefresh: fetchFeeDetails,
         child: SingleChildScrollView(
@@ -222,7 +240,7 @@ class _FeeDetailsScreenState extends State<FeeDetailsScreen> {
                       decoration: BoxDecoration(
                         color: const Color(0xfffff7e6),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border(left: BorderSide(color: Color(0xffff9f43), width: 6)),
+                        border: const Border(left: BorderSide(color: Color(0xffff9f43), width: 6)),
                       ),
                       child: Text(
                         "Total Pending Fee: ₹${calculateTotalDue().toStringAsFixed(2)}",

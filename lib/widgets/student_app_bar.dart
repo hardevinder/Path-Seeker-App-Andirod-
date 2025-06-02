@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class StudentAppBar extends StatelessWidget implements PreferredSizeWidget {
-  final BuildContext parentContext;
   final String studentName;
+  final BuildContext parentContext; // ✅ Added this
 
   const StudentAppBar({
     super.key,
-    required this.parentContext,
     required this.studentName,
+    required this.parentContext, // ✅ Added this
   });
 
   Future<void> handleLogout() async {
@@ -23,15 +23,16 @@ class StudentAppBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     return AppBar(
-      // backgroundColor: const Color(0xFF1976D2), // Beautiful blue f6740c
-      backgroundColor: const Color(0xFF1976D2), // Beautiful blue f6740c
+      backgroundColor: const Color(0xFF1976D2),
       elevation: 6,
       shadowColor: Colors.black.withOpacity(0.3),
-      leading: IconButton(
-        icon: const Icon(Icons.notifications_none, color: Colors.white, size: 26),
-        onPressed: () {
-          Navigator.of(context).pushNamed('/notifications');
-        },
+      leading: Builder(
+        builder: (ctx) => IconButton(
+          icon: const Icon(Icons.menu, color: Colors.white, size: 26),
+          onPressed: () {
+            Scaffold.of(ctx).openDrawer(); // ✅ Opens Drawer from internal context
+          },
+        ),
       ),
       centerTitle: true,
       title: Text(

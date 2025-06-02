@@ -33,8 +33,12 @@ class StudentBottomBar extends StatelessWidget {
           label: 'Assignments',
         ),
         BottomNavigationBarItem(
-          icon: Icon(Icons.announcement),
-          label: 'Circulars',
+          icon: Icon(Icons.schedule),
+          label: 'Time Table',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.campaign), // ✅ New icon
+          label: 'Circulars',         // ✅ Updated label
         ),
       ],
     );

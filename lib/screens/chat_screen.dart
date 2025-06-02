@@ -40,7 +40,7 @@ class _ChatScreenState extends State<ChatScreen> {
   late String chatId;
   File? _attachment;
   final picker = ImagePicker();
-  final String apiUrl = "https://erp.sirhindpublicschool.com:3000/upload/";
+  final String apiUrl = "https://erp.sirhindpublicschool.com:3000/chat/upload";
   final FlutterSoundRecorder _audioRecorder = FlutterSoundRecorder();
   bool _isRecording = false;
   String? _editingMessageId;
@@ -85,12 +85,16 @@ class _ChatScreenState extends State<ChatScreen> {
     final resStr = await response.stream.bytesToString();
     final jsonData = json.decode(resStr);
 
-    String fileUrl = jsonData['fileUrl'];
-    if (!fileUrl.startsWith("http")) {
-      fileUrl = "https://erp.sirhindpublicschool.com" + fileUrl;
+   final fileUrl = jsonData['fileUrl'] ?? jsonData['url'];
+    if (fileUrl == null || fileUrl is! String) {
+      print("❌ Upload failed: fileUrl missing or invalid → $jsonData");
+      return null;
     }
-
+    if (!fileUrl.startsWith("http")) {
+      return "https://erp.sirhindpublicschool.com$fileUrl";
+    }
     return fileUrl;
+
   } else {
     return null;
   }
@@ -109,7 +113,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (_attachment != null) {
       uploadedUrl = await uploadAttachment(_attachment!);
       fileName = _attachment!.path.split('/').last;
-      fileType = lookupMimeType(_attachment!.path) ?? 'application/pdf';
+      fileType = lookupMimeType(_attachment!.path) ?? 'application/octet-stream';
     }
 
     final message = {
@@ -247,61 +251,46 @@ class _ChatScreenState extends State<ChatScreen> {
     showToast("Message deleted");
   }
 
-Widget _buildAttachmentWidget(String? url, String? type, String? name) {
-  if (url == null || name == null) return const SizedBox();
+  Widget _buildAttachmentWidget(String? url, String? type, String? name) {
+    if (url == null || name == null) return const SizedBox();
 
-  if (!url.startsWith("http")) {
-    url = "https://erp.sirhindpublicschool.com" + url;
-  }
+    if (!url.startsWith("http")) {
+      url = "https://erp.sirhindpublicschool.com" + url;
+    }
 
-  if (type?.startsWith('image/') == true) {
-    return Image.network(url, height: 150, width: 150, fit: BoxFit.cover);
-  } else {
-    return GestureDetector(
-      onTap: () async {
-        print("Trying to open file: $url");
+    if (type?.startsWith('image/') == true) {
+      return Image.network(url, height: 150, width: 150, fit: BoxFit.cover);
+    } else {
+      return ElevatedButton.icon(
+    onPressed: () async {
+      print("Trying to open file: $url");
 
-        try {
-          showToast("Downloading file...");
-          final response = await http.get(Uri.parse(url!)); // ✅ FIXED HERE
+      try {
+        showToast("Downloading file...");
+        final response = await http.get(Uri.parse(url!));
 
-          if (response.statusCode != 200) {
-            showToast("Failed to download file");
-            return;
-          }
-
-          final bytes = response.bodyBytes;
-          final fileName = name;
-          final filePath = '${Directory.systemTemp.path}/$fileName';
-          final file = File(filePath);
-          await file.writeAsBytes(bytes);
-
-          // final result = await OpenFile.open(file.path);
-          // if (result.type != ResultType.done) {
-          //   showToast("File open failed: ${result.message}");
-          // }
-          // final uri = Uri.file(file.path);
-          //   if (!await launchUrl(uri)) {
-          //     print('Could not open file');
-          //   }
-          final result = await OpenFilex.open(file.path);
-            if (result.type != ResultType.done) {
-              showToast("❌ Could not open file: ${result.message}");
-            }
-
-
-        } catch (e) {
-          showToast("Error opening file: $e");
+        if (response.statusCode != 200) {
+          showToast("Failed to download file");
+          return;
         }
-      },
-      child: Text(
-        '📄 $name',
-        style: const TextStyle(
-          decoration: TextDecoration.underline,
-          color: Colors.blue,
-        ),
-      ),
-    );
+
+        final bytes = response.bodyBytes;
+        final filePath = '${Directory.systemTemp.path}/$name';
+        final file = File(filePath);
+        await file.writeAsBytes(bytes);
+
+        final result = await OpenFilex.open(file.path);
+        if (result.type != ResultType.done) {
+          showToast("❌ Could not open file: ${result.message}");
+        }
+      } catch (e) {
+        showToast("Error opening file: $e");
+      }
+    },
+    icon: Icon(Icons.download),
+    label: Text('Download $name'),
+  );
+
   }
 }
 
@@ -409,11 +398,12 @@ print("📩 FCM Response → Body: ${response.body}");
                     itemBuilder: (context, index) {
                       final msg = messages[index];
                       final data = msg.data() as Map<String, dynamic>;
+                      print('🔥 MSG DATA: ${data.toString()}');
                       final replyText = data['replyToText'];
                       final replySender = data['replyToSender'];
                       if (data.containsKey('reactions')) {
                         _messageReactions[msg.id] = Map<String, String?>.from(data['reactions']);
-                      }
+                      }                      
                       final isMe = data['senderId'] == widget.currentUserId;
                       return Container(
                         alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
@@ -424,7 +414,17 @@ print("📩 FCM Response → Body: ${response.body}");
                             if (replyText != null)
                               Text('↪️ $replySender: $replyText',
                                   style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)),
-                            _buildAttachmentWidget(data['fileUrl'], data['attachmentType'], data['fileName']),
+                            if ((data['text'] == null || data['text'].toString().trim().isEmpty) &&
+                              (data['fileUrl'] != null || data['fileName'] != null)) ...[
+                            _buildAttachmentWidget(
+                              data['fileUrl'] ?? data['url'],
+                              data['attachmentType'] ?? data['fileType'],
+                              data['fileName'] ?? Uri.parse(data['fileUrl'] ?? data['url'] ?? '').pathSegments.last,
+                            ),
+                          ] else if ((data['text'] ?? '').toString().trim().isNotEmpty) ...[
+                            Text(data['text'], style: TextStyle(fontSize: 16)),
+],
+
                             Container(
                               margin: EdgeInsets.only(top: 5),
                               padding: const EdgeInsets.all(10),
@@ -435,7 +435,9 @@ print("📩 FCM Response → Body: ${response.body}");
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(data['text'] ?? '', style: TextStyle(fontSize: 16)),
+                                  // if ((data['text'] ?? '').toString().trim().isNotEmpty)
+                                  //   Text(data['text'], style: TextStyle(fontSize: 16)),
+
                                   if (_messageReactions[msg.id]?.isNotEmpty ?? false)
                                     Wrap(
                                       children: _messageReactions[msg.id]!.entries

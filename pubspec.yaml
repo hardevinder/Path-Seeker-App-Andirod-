@@ -15,7 +15,7 @@ dependencies:
   pie_chart: ^5.3.2
   fl_chart: ^0.64.0
 
-  # Firebase & Auth (✅ Fixed Versions)
+  # Firebase & Auth
   firebase_core: ^2.32.0
   firebase_auth: ^4.20.0
   google_sign_in: ^6.2.1
@@ -40,8 +40,9 @@ dependencies:
   oktoast: ^3.3.1
   image_picker: ^1.0.7
 
-  # Date Formatting
-  intl: ^0.18.1
+  # Date Formatting & Calendar
+  intl: ^0.19.0
+  table_calendar: ^3.0.9
 
 dev_dependencies:
   flutter_test:

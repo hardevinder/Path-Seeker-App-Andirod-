@@ -7,16 +7,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pie_chart/pie_chart.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:dio/dio.dart';
-// import 'package:open_file/open_file.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; // 🔥 Firestore
-import '../widgets/student_app_bar.dart';
-import '../widgets/student_bottom_bar.dart'; // ⬅️ Add this
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:open_filex/open_filex.dart';
 
-
-
+import '../widgets/student_app_bar.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -123,111 +119,83 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int get absent => attendance.where((a) => a['status'] == 'absent').length;
   int get leave => attendance.where((a) => a['status'] == 'leave').length;
 
-
-Future<void> handleDownload(String? filePath) async {
-  if (filePath == null || filePath.trim().isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('No file path provided')),
-    );
-    return;
-  }
-
-  final rawUrl = filePath.startsWith('http')
-      ? filePath
-      : 'https://erp.sirhindpublicschool.com:3000/$filePath';
-
-  final encodedUrl = Uri.encodeFull(rawUrl);
-  final fileName = encodedUrl.split('/').last;
-
-  try {
-    final storage = await Permission.storage.request();
-    final manage = await Permission.manageExternalStorage.request();
-
-    if (!storage.isGranted && !manage.isGranted) {
+  Future<void> handleDownload(String? filePath) async {
+    if (filePath == null || filePath.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Storage permission denied')),
+        const SnackBar(content: Text('No file path provided')),
       );
       return;
     }
 
-    final dir = await getExternalStorageDirectory();
-    final savePath = '${dir!.path}/$fileName';
+    final rawUrl = filePath.startsWith('http')
+        ? filePath
+        : 'https://erp.sirhindpublicschool.com:3000/$filePath';
 
-    final dio = Dio();
-    await dio.download(encodedUrl, savePath);
+    final encodedUrl = Uri.encodeFull(rawUrl);
+    final fileName = encodedUrl.split('/').last;
 
-    if (!mounted) return;
+    try {
+      final storage = await Permission.storage.request();
+      final manage = await Permission.manageExternalStorage.request();
 
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: const Text('✅ File Downloaded'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.download_done_rounded, size: 48, color: Colors.green),
-            const SizedBox(height: 12),
-            Text(fileName, textAlign: TextAlign.center),
+      if (!storage.isGranted && !manage.isGranted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Storage permission denied')),
+        );
+        return;
+      }
+
+      final dir = await getExternalStorageDirectory();
+      final savePath = '${dir!.path}/$fileName';
+
+      final dio = Dio();
+      await dio.download(encodedUrl, savePath);
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          title: const Text('✅ File Downloaded'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.download_done_rounded, size: 48, color: Colors.green),
+              const SizedBox(height: 12),
+              Text(fileName, textAlign: TextAlign.center),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                if (await File(savePath).exists()) {
+                  final result = await OpenFilex.open(savePath);
+                  debugPrint('📂 OpenFilex result: ${result.message}');
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('File does not exist')),
+                  );
+                }
+              },
+              child: const Text('Open File'),
+            ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-
-              if (await File(savePath).exists()) {
-                final result = await OpenFilex.open(savePath);
-                debugPrint('📂 OpenFilex result: ${result.message}');
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('File does not exist')),
-                );
-              }
-            },
-            child: const Text('Open File'),
-          ),
-        ],
-      ),
-    );
-  } catch (e) {
-    debugPrint('Download error: $e');
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Failed to download file\nError: $e')),
-    );
+      );
+    } catch (e) {
+      debugPrint('Download error: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to download file\nError: $e')),
+      );
+    }
   }
-}
-
-
-
-  int selectedTabIndex = 0; // For tracking tab state
-
-void onBottomNavTap(int index) {
-  setState(() {
-    selectedTabIndex = index;
-  });
-
-  switch (index) {
-    case 0:
-      Navigator.pushReplacementNamed(context, '/dashboard');
-      break;
-    case 1:
-      Navigator.pushReplacementNamed(context, '/fee-details');
-      break;
-    case 2:
-      Navigator.pushReplacementNamed(context, '/assignments');
-      break;
-    case 3:
-      Navigator.pushReplacementNamed(context, '/circulars');
-      break;
-  }
-}
-
 
   @override
   Widget build(BuildContext context) {
@@ -239,12 +207,25 @@ void onBottomNavTap(int index) {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F7FC),
-      // appBar: AppBar(
-      //   title: Center(child: Text('Welcome $studentName')),
-      //   backgroundColor: Colors.deepPurple,
-      // ),
       appBar: StudentAppBar(studentName: studentName, parentContext: context),
-
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            DrawerHeader(
+              decoration: const BoxDecoration(color: Colors.indigo),
+              child: Text('Welcome $studentName', style: const TextStyle(color: Colors.white, fontSize: 18)),
+            ),
+            _drawerItem(Icons.dashboard, 'Dashboard', '/dashboard'),
+            _drawerItem(Icons.receipt_long, 'Fee Details', '/fee-details'),
+            _drawerItem(Icons.assignment, 'Assignments', '/assignments'),
+            _drawerItem(Icons.schedule, 'Time Table', '/timetable'),
+            _drawerItem(Icons.calendar_month, 'Attendance', '/attendance'),
+            _drawerItem(Icons.campaign, 'Circulars', '/circulars'),
+            _drawerItem(Icons.logout, 'Logout', '/login', isLogout: true),
+          ],
+        ),
+      ),
       body: SingleChildScrollView(
         controller: _scrollController,
         padding: const EdgeInsets.all(16),
@@ -260,18 +241,15 @@ void onBottomNavTap(int index) {
                 feeCard('Due', totalDue, Colors.redAccent),
               ],
             ),
-            const SizedBox(height: 24), // More space before the label
+            const SizedBox(height: 24),
             const Align(
               alignment: Alignment.center,
               child: Text(
                 'Attendance',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
             ),
-            const SizedBox(height: 16), // Extra space between label and chart
+            const SizedBox(height: 16),
             Center(
               child: PieChart(
                 dataMap: {
@@ -281,8 +259,8 @@ void onBottomNavTap(int index) {
                 },
                 chartType: ChartType.ring,
                 baseChartColor: Colors.grey[200]!,
-                ringStrokeWidth: 55, // More compact ring
-                chartRadius: MediaQuery.of(context).size.width / 3.2, // Smaller chart
+                ringStrokeWidth: 55,
+                chartRadius: MediaQuery.of(context).size.width / 3.2,
                 centerText: "",
                 legendOptions: const LegendOptions(
                   showLegends: true,
@@ -299,8 +277,6 @@ void onBottomNavTap(int index) {
                 ),
               ),
             ),
-
-
             const SizedBox(height: 24),
             const Text('Latest Assignments', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             for (int i = 0; i < assignments.length; i++)
@@ -314,11 +290,9 @@ void onBottomNavTap(int index) {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(assignments[i]['title'],
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      Text(assignments[i]['title'], style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 6),
-                      if (assignments[i]['AssignmentFiles'] != null &&
-                          assignments[i]['AssignmentFiles'].isNotEmpty)
+                      if (assignments[i]['AssignmentFiles'] != null && assignments[i]['AssignmentFiles'].isNotEmpty)
                         for (var file in assignments[i]['AssignmentFiles'])
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -343,12 +317,12 @@ void onBottomNavTap(int index) {
         alignment: Alignment.topRight,
         children: [
           FloatingActionButton(
-            backgroundColor: Colors.white, // Bright button
+            backgroundColor: Colors.white,
             elevation: 5,
             onPressed: () {
               Navigator.pushNamed(context, '/contacts');
             },
-            child: const Icon(Icons.chat_bubble_outline, color: Colors.deepPurple), // Purple icon
+            child: const Icon(Icons.chat_bubble_outline, color: Colors.deepPurple),
           ),
           if (unreadCount > 0)
             Positioned(
@@ -359,7 +333,7 @@ void onBottomNavTap(int index) {
                 decoration: BoxDecoration(
                   color: Colors.redAccent,
                   shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2), // crisp border
+                  border: Border.all(color: Colors.white, width: 2),
                   boxShadow: [
                     BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 4)
                   ],
@@ -367,33 +341,31 @@ void onBottomNavTap(int index) {
                 constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
                 child: Text(
                   '$unreadCount',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
                   textAlign: TextAlign.center,
                 ),
               ),
             ),
         ],
       ),
-
-      bottomNavigationBar: StudentBottomBar(
-        selectedIndex: selectedTabIndex,
-        onItemTapped: onBottomNavTap,
-      ),
-
-
     );
   }
 
-  void _scrollToBottom() {
-    Future.delayed(const Duration(milliseconds: 100), () {
-      if (_scrollController.hasClients) {
-        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-      }
-    });
+  Widget _drawerItem(IconData icon, String title, String route, {bool isLogout = false}) {
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(title),
+      onTap: () async {
+        Navigator.pop(context);
+        if (isLogout) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.remove('authToken');
+          Navigator.pushReplacementNamed(context, route);
+        } else {
+          Navigator.pushReplacementNamed(context, route);
+        }
+      },
+    );
   }
 
   Widget feeCard(String title, double amount, Color color) {
@@ -407,11 +379,9 @@ void onBottomNavTap(int index) {
         padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 8),
         child: Column(
           children: [
-            Text(title,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15)),
+            Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15)),
             const SizedBox(height: 4),
-            Text('₹${amount.toStringAsFixed(0)}',
-                style: const TextStyle(color: Colors.white, fontSize: 16)),
+            Text('₹${amount.toStringAsFixed(0)}', style: const TextStyle(color: Colors.white, fontSize: 16)),
           ],
         ),
       ),
