@@ -148,7 +148,7 @@ class _ChatScreenState extends State<ChatScreen> {
           .doc(chatId)
           .collection('messages')
           .add(message);
-          sendPushNotification(widget.contactId, widget.currentUserName, messageText);
+          sendPushNotification(widget.contactId, widget.currentUserId, messageText);
 
     }
 
@@ -241,15 +241,16 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  Future<void> deleteMessage(String messageId) async {
-    await FirebaseFirestore.instance
-        .collection('chats')
-        .doc(chatId)
-        .collection('messages')
-        .doc(messageId)
-        .delete();
-    showToast("Message deleted");
-  }
+Future<void> deleteMessage(String messageId) async {
+  await FirebaseFirestore.instance
+      .collection('chats')
+      .doc(chatId)
+      .collection('messages')
+      .doc(messageId)
+      .delete();
+  showToast("Message deleted");
+}
+
 
   Widget _buildAttachmentWidget(String? url, String? type, String? name) {
     if (url == null || name == null) return const SizedBox();
@@ -294,40 +295,33 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 }
 
-Future<void> sendPushNotification(String receiverId, String senderName, String message) async {
-  final doc = await FirebaseFirestore.instance.collection('users').doc(receiverId).get();
-  final fcmToken = doc.data()?['fcmToken'];
+Future<void> sendPushNotification(String receiverId, String senderId, String message) async {
+  final receiverDoc = await FirebaseFirestore.instance.collection('users').doc(receiverId).get();
+  final senderDoc = await FirebaseFirestore.instance.collection('users').doc(senderId).get();
+
+  final fcmToken = receiverDoc.data()?['fcmToken'];
+  final senderName = senderDoc.data()?['name'] ?? 'New Message';
 
   if (fcmToken == null) {
     print("🚫 No FCM token for user $receiverId");
     return;
   }
 
-  final serverKey = 'AIzaSyD6h5jlZ1DJbGulpsxFY9JDLOfsBsl8XJU'; // 🔒 Replace with environment-safe storage in production
+  final apiUrl = 'https://erp.sirhindpublicschool.com:3000/fcm/send-notification';
 
   try {
     final response = await http.post(
-  Uri.parse('https://fcm.googleapis.com/fcm/send'),
-  headers: {
-    'Content-Type': 'application/json',
-    'Authorization': 'key=$serverKey',
-  },
-  body: jsonEncode({
-    "to": fcmToken,
-    "notification": {
-      "title": "Message from $senderName",
-      "body": message,
-      "sound": "default",
-    },
-    "data": {
-      "click_action": "FLUTTER_NOTIFICATION_CLICK",
-    }
-  }),
-);
+      Uri.parse(apiUrl),
+      headers: { 'Content-Type': 'application/json' },
+      body: jsonEncode({
+        "fcmToken": fcmToken,
+        "title": "Message from $senderName",
+        "body": message,
+      }),
+    );
 
-print("📤 FCM PUSH SENT → Status: ${response.statusCode}");
-print("📩 FCM Response → Body: ${response.body}");
-
+    print("📤 PUSH SENT → Status: ${response.statusCode}");
+    print("📩 Response → ${response.body}");
   } catch (e) {
     print("❌ Push error: $e");
   }
@@ -396,91 +390,73 @@ print("📩 FCM Response → Body: ${response.body}");
                     controller: _scrollController,
                     itemCount: messages.length,
                     itemBuilder: (context, index) {
-                      final msg = messages[index];
-                      final data = msg.data() as Map<String, dynamic>;
-                      print('🔥 MSG DATA: ${data.toString()}');
-                      final replyText = data['replyToText'];
-                      final replySender = data['replyToSender'];
-                      if (data.containsKey('reactions')) {
-                        _messageReactions[msg.id] = Map<String, String?>.from(data['reactions']);
-                      }                      
+                      final data = messages[index].data() as Map<String, dynamic>;
                       final isMe = data['senderId'] == widget.currentUserId;
-                      return Container(
-                        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                        child: Column(
-                          crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                          children: [
-                            if (replyText != null)
-                              Text('↪️ $replySender: $replyText',
-                                  style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)),
-                            if ((data['text'] == null || data['text'].toString().trim().isEmpty) &&
-                              (data['fileUrl'] != null || data['fileName'] != null)) ...[
-                            _buildAttachmentWidget(
-                              data['fileUrl'] ?? data['url'],
-                              data['attachmentType'] ?? data['fileType'],
-                              data['fileName'] ?? Uri.parse(data['fileUrl'] ?? data['url'] ?? '').pathSegments.last,
-                            ),
-                          ] else if ((data['text'] ?? '').toString().trim().isNotEmpty) ...[
-                            Text(data['text'], style: TextStyle(fontSize: 16)),
-],
-
-                            Container(
-                              margin: EdgeInsets.only(top: 5),
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: isMe ? Colors.blue[100] : Colors.grey[200],
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  // if ((data['text'] ?? '').toString().trim().isNotEmpty)
-                                  //   Text(data['text'], style: TextStyle(fontSize: 16)),
-
-                                  if (_messageReactions[msg.id]?.isNotEmpty ?? false)
-                                    Wrap(
-                                      children: _messageReactions[msg.id]!.entries
-                                          .where((entry) => entry.value != null)
-                                          .map((entry) => Padding(
-                                                padding: const EdgeInsets.symmetric(horizontal: 4),
-                                                child: Text('${entry.value!}'),
-                                              ))
-                                          .toList(),
-                                    ),
-                                  Row(
-                                    children: [
-                                      IconButton(
-                                        icon: Icon(Icons.reply, size: 16),
-                                        onPressed: () => startReply(data['text'], data['senderName']),
+                      return GestureDetector(
+                        onLongPress: isMe
+                            ? () {
+                                showDialog(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: Text("Delete Message"),
+                                    content: Text("Do you want to delete this message?"),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(context),
+                                        child: Text("Cancel"),
                                       ),
-                                      if (isMe) ...[
-                                        IconButton(
-                                          icon: Icon(Icons.edit, size: 16),
-                                          onPressed: () => startEditing(msg.id, data['text']),
-                                        ),
-                                        IconButton(
-                                          icon: Icon(Icons.delete, size: 16),
-                                          onPressed: () => deleteMessage(msg.id),
-                                        ),
-                                      ],
-                                      Text(
-                                        data['status'] == 'read' ? '✔✔' : '✔',
-                                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                                      TextButton(
+                                        onPressed: () async {
+                                          Navigator.pop(context);
+                                          await messages[index].reference.delete();
+                                          showToast("Message deleted");
+                                        },
+                                        child: Text("Delete", style: TextStyle(color: Colors.red)),
                                       ),
                                     ],
-                                  )
-                                ],
-                              ),
-                            ),
-                            SizedBox(height: 4),
-                            Text(data['senderName'] ?? '',
-                                style: TextStyle(fontSize: 10, color: Colors.grey[700]))
-                          ],
+                                  ),
+                                );
+                              }
+                            : null,
+                        child: Container(
+                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                          child: Column(
+                            crossAxisAlignment:
+                                isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                            children: [
+                              if (data['replyToText'] != null)
+                                Text(
+                                  '↪️ ${data['replyToSender']}: ${data['replyToText']}',
+                                  style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey),
+                                ),
+                              if (data['fileUrl'] != null || data['fileName'] != null)
+                                _buildAttachmentWidget(
+                                  data['fileUrl'] ?? data['url'],
+                                  data['attachmentType'] ?? data['fileType'],
+                                  data['fileName'] ?? Uri.parse(data['fileUrl'] ?? data['url'] ?? '').pathSegments.last,
+                                ),
+                              if ((data['text'] ?? '').toString().trim().isNotEmpty)
+                                Container(
+                                  margin: EdgeInsets.only(top: 4),
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: isMe ? Colors.blue[100] : Colors.grey[200],
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(data['text'], style: TextStyle(fontSize: 16)),
+                                ),
+                              Text(
+                                data['senderName'] ?? '',
+                                style: TextStyle(fontSize: 10, color: Colors.grey[700]),
+                              )
+                            ],
+                          ),
                         ),
                       );
                     },
                   );
+
                 },
               ),
             ),

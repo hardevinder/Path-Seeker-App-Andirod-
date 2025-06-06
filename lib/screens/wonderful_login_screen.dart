@@ -59,6 +59,7 @@ class _WonderfulLoginScreenState extends State<WonderfulLoginScreen> {
         if (token != null) {
           await FirebaseFirestore.instance.collection('users').doc(userId).set({
             'fcmToken': token,
+            'role': 'student', // ✅ Add this line to avoid future errors
           }, SetOptions(merge: true));
           print("✅ FCM Token saved to Firestore: $token");
 
