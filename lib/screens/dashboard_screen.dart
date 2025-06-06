@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -27,6 +28,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String username = '';
   bool loading = true;
   int unreadCount = 0;
+  Timer? _refreshTimer; // ✅ Added for periodic refresh
 
   final ScrollController _scrollController = ScrollController();
 
@@ -38,6 +40,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     loadUser();
+     // ✅ Refresh data every 15 seconds
+    _refreshTimer = Timer.periodic(Duration(seconds: 2), (timer) {
+      fetchDashboardData();
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel(); // ✅ Clean up the timer
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<void> loadUser() async {
@@ -82,7 +95,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
         studentName = feeData['name'];
         fees = feeData['feeDetails'] ?? [];
         attendance = attData ?? [];
-        assignments = (assignData['assignments'] ?? []).take(3).toList();
+        final List allAssignments = (assignData['assignments'] ?? [])
+    .where((a) => a['createdAt'] != null)
+    .toList();
+
+allAssignments.sort((a, b) {
+  final aDate = DateTime.tryParse(a['createdAt']) ?? DateTime(2000);
+  final bDate = DateTime.tryParse(b['createdAt']) ?? DateTime(2000);
+  return bDate.compareTo(aDate); // 🔄 Latest first
+});
+
+assignments = allAssignments.take(3).toList();
+
+
         loading = false;
       });
     } catch (e) {
