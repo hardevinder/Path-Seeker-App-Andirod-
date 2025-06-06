@@ -143,12 +143,29 @@ class _ChatScreenState extends State<ChatScreen> {
           .update(message);
       _editingMessageId = null;
     } else {
-      await FirebaseFirestore.instance
-          .collection('chats')
-          .doc(chatId)
-          .collection('messages')
-          .add(message);
-          sendPushNotification(widget.contactId, widget.currentUserId, messageText);
+          await FirebaseFirestore.instance
+              .collection('chats')
+              .doc(chatId)
+              .collection('messages')
+              .add(message);
+
+          await FirebaseFirestore.instance.collection('chats').doc(chatId).set({
+            'lastMessage': message['text']?.toString().isNotEmpty == true
+                ? message['text']
+                : (message['fileName'] ?? '📎 Attachment'),
+            'lastMessageTimestamp': FieldValue.serverTimestamp(),
+            'participants': [widget.currentUserId, widget.contactId],
+            'unreadCounts': { widget.contactId: FieldValue.increment(1) },
+          }, SetOptions(merge: true));
+
+         sendPushNotification(
+            widget.contactId,
+            widget.currentUserId,
+            (message['text'] ?? '📎 Attachment').toString(),
+          );
+
+
+
 
     }
 
