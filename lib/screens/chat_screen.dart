@@ -505,11 +505,30 @@ Future<void> sendPushNotification(String receiverId, String senderId, String mes
                     onPressed: _isRecording ? stopRecording : startRecording,
                   ),
                   Expanded(
-                    child: TextField(
-                      controller: _messageController,
-                      decoration: InputDecoration(hintText: 'Type your message...'),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: 40,
+                        maxHeight: 150, // You can increase this if you want taller messages
+                      ),
+                      child: Scrollbar(
+                        child: SingleChildScrollView(
+                          reverse: true,
+                          child: TextField(
+                            controller: _messageController,
+                            minLines: 1,
+                            maxLines: null, // 🔥 Key point to grow as much as needed
+                            keyboardType: TextInputType.multiline,
+                            decoration: InputDecoration(
+                              hintText: 'Type your message...',
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
+                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
+
                   IconButton(icon: Icon(Icons.send, color: Colors.blue), onPressed: sendMessage),
                 ],
               ),
