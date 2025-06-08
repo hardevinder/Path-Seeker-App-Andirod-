@@ -19,6 +19,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   bool loading = true;
 
   int present = 0, absent = 0, leave = 0;
+  DateTime _focusedDay = DateTime.now();
+  DateTime? _selectedDay;
   DateTime? selectedDate;
   String? selectedStatus;
 
@@ -53,7 +55,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       for (var entry in data) {
         DateTime date = DateTime.parse(entry['date']);
         String status = entry['status'];
-        tempMap[date] = status;
+        tempMap[DateTime.utc(date.year, date.month, date.day)] = status;
         if (status == 'present') p++;
         if (status == 'absent') a++;
         if (status == 'leave') l++;
@@ -82,7 +84,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
       for (var entry in data) {
         DateTime date = DateTime.parse(entry['date']);
-        temp.add(date);
+        temp.add(DateTime.utc(date.year, date.month, date.day));
       }
 
       setState(() => holidayDates = temp);
@@ -90,8 +92,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   Widget _buildStatusMarker(DateTime day) {
-    String? status = attendanceData[day];
-    bool isHoliday = holidayDates.contains(day);
+    final normalizedDay = DateTime.utc(day.year, day.month, day.day);
+    String? status = attendanceData[normalizedDay];
+    bool isHoliday = holidayDates.contains(normalizedDay);
 
     if (isHoliday) {
       return Column(
@@ -99,7 +102,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         children: [
           Text('${day.day}', style: const TextStyle(color: Colors.black)),
           const SizedBox(height: 2),
-          Icon(Icons.celebration, color: Colors.orange, size: 12),
+          Icon(Icons.celebration, color: Colors.yellow[800], size: 12),
         ],
       );
     }
@@ -130,10 +133,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   void _handleDayPressed(DateTime day, DateTime _) {
+    final normalizedDay = DateTime.utc(day.year, day.month, day.day);
     setState(() {
-      selectedDate = day;
-      selectedStatus = attendanceData[day]?.toUpperCase() ??
-          (holidayDates.contains(day) ? 'HOLIDAY' : 'No Record');
+      selectedDate = normalizedDay;
+      selectedStatus = attendanceData[normalizedDay]?.toUpperCase() ??
+          (holidayDates.contains(normalizedDay) ? 'HOLIDAY' : 'No Record');
     });
     showModalBottomSheet(
       context: context,
@@ -144,7 +148,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              DateFormat('EEEE, MMMM d, yyyy').format(day),
+              DateFormat('EEEE, MMMM d, yyyy').format(normalizedDay),
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
@@ -199,9 +203,17 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                     ),
                     const SizedBox(height: 20),
                     TableCalendar(
-                      focusedDay: DateTime.now(),
+                      focusedDay: _focusedDay,
                       firstDay: DateTime.utc(2022, 1, 1),
                       lastDay: DateTime.utc(2030, 12, 31),
+                      selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
+                      onDaySelected: (selectedDay, focusedDay) {
+                        setState(() {
+                          _selectedDay = selectedDay;
+                          _focusedDay = focusedDay;
+                        });
+                        _handleDayPressed(selectedDay, focusedDay);
+                      },
                       calendarFormat: CalendarFormat.month,
                       startingDayOfWeek: StartingDayOfWeek.monday,
                       headerStyle: const HeaderStyle(
@@ -227,7 +239,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                         todayBuilder: (context, day, _) => _buildStatusMarker(day),
                         selectedBuilder: (context, day, _) => _buildStatusMarker(day),
                       ),
-                      onDaySelected: _handleDayPressed,
                     ),
                     const SizedBox(height: 20),
                     _buildLegend(),
@@ -265,7 +276,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           _legendItem('Present', Colors.green),
           _legendItem('Absent', Colors.red),
           _legendItem('Leave', Colors.orange),
-          _legendItem('Holiday', Colors.yellow),
+          _legendItem('Holiday', Colors.yellow.shade800),
         ],
       ),
     );

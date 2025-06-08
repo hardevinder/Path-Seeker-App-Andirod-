@@ -28,7 +28,6 @@ class _StudentCircularsScreenState extends State<StudentCircularsScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('authToken');
-
       if (token == null) throw Exception('No token found');
 
       final response = await http.get(
@@ -41,7 +40,6 @@ class _StudentCircularsScreenState extends State<StudentCircularsScreen> {
         final List<dynamic> items = data['circulars'] ?? [];
         items.sort((a, b) => DateTime.parse(b['createdAt'])
             .compareTo(DateTime.parse(a['createdAt'])));
-
         setState(() {
           circulars = items;
           loading = false;
@@ -95,44 +93,69 @@ class _StudentCircularsScreenState extends State<StudentCircularsScreen> {
     Navigator.of(context).pushReplacementNamed('/login');
   }
 
+  ListTile _buildDrawerItem(IconData icon, String title, String route) {
+    return ListTile(
+      leading: Icon(icon, color: Colors.deepPurple),
+      title: Text(title),
+      onTap: () {
+        Navigator.of(context).pop(); // close drawer
+        Navigator.pushReplacementNamed(context, route);
+      },
+    );
+  }
+
+  Drawer _buildDrawer(BuildContext context) {
+    return Drawer(
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          const DrawerHeader(
+            decoration: BoxDecoration(color: Colors.deepPurple),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CircleAvatar(
+                  radius: 30,
+                  backgroundColor: Colors.white,
+                  child: Icon(Icons.school, color: Colors.deepPurple, size: 30),
+                ),
+                SizedBox(height: 8),
+                Text("Student Menu", style: TextStyle(color: Colors.white, fontSize: 20))
+              ],
+            ),
+          ),
+          _buildDrawerItem(Icons.dashboard, 'Dashboard', '/dashboard'),
+          _buildDrawerItem(Icons.assignment, 'Assignments', '/assignments'),
+          _buildDrawerItem(Icons.calendar_today, 'Time Table', '/timetable'),
+          _buildDrawerItem(Icons.money, 'Fee Details', '/fee-details'),
+          _buildDrawerItem(Icons.notifications, 'Circulars', '/circulars'),
+          _buildDrawerItem(Icons.access_time, 'Attendance', '/attendance'),
+          _buildDrawerItem(Icons.event_note, 'Leave Requests', '/leave'),
+          ListTile(
+            leading: const Icon(Icons.logout, color: Colors.deepPurple),
+            title: const Text('Logout'),
+            onTap: _handleLogout,
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Student Circulars'),
+        title: const Text('Student Circulars', style: TextStyle(color: Colors.white)),
         leading: Builder(
           builder: (context) => IconButton(
             icon: const Icon(Icons.menu, color: Colors.white),
             onPressed: () => Scaffold.of(context).openDrawer(),
           ),
         ),
-        backgroundColor: const Color(0xFF1976D2),
+        backgroundColor: Colors.deepPurple,
+        foregroundColor: Colors.white,
       ),
-      drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            const DrawerHeader(
-              decoration: BoxDecoration(color: Colors.blue),
-              child: Text('Menu',
-                  style: TextStyle(color: Colors.white, fontSize: 24)),
-            ),
-            ListTile(
-              leading: const Icon(Icons.dashboard),
-              title: const Text('Dashboard'),
-              onTap: () {
-                Navigator.of(context).pop(); // close drawer
-                Navigator.pushReplacementNamed(context, '/dashboard');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.logout),
-              title: const Text('Logout'),
-              onTap: _handleLogout,
-            ),
-          ],
-        ),
-      ),
+      drawer: _buildDrawer(context),
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(

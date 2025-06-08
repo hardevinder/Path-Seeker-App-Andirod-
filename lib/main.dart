@@ -14,6 +14,7 @@ import 'screens/student_assignments_screen.dart';
 import 'screens/timetable_screen.dart';
 import 'screens/attendance_screen.dart';
 import 'screens/student_circulars_screen.dart';
+import 'screens/leave_page.dart';
 import 'widgets/student_app_bar.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -56,6 +57,7 @@ class StudentApp extends StatelessWidget {
           '/timetable': (context) => const TimeTableScreen(),
           '/attendance': (context) => const AttendanceScreen(),
           '/circulars': (context) => const StudentCircularsScreen(),
+          '/leave': (context) => LeavePage(), // ✅ Leave page route added
           '/chat': (context) {
             final args = ModalRoute.of(context)!.settings.arguments as Map;
             return ChatScreen(

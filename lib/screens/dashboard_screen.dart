@@ -28,7 +28,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String username = '';
   bool loading = true;
   int unreadCount = 0;
-  Timer? _refreshTimer; // ✅ Added for periodic refresh
+  Timer? _refreshTimer;
 
   final ScrollController _scrollController = ScrollController();
 
@@ -40,7 +40,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     loadUser();
-     // ✅ Refresh data every 15 seconds
     _refreshTimer = Timer.periodic(Duration(seconds: 2), (timer) {
       fetchDashboardData();
     });
@@ -48,7 +47,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   void dispose() {
-    _refreshTimer?.cancel(); // ✅ Clean up the timer
+    _refreshTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
@@ -96,17 +95,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
         fees = feeData['feeDetails'] ?? [];
         attendance = attData ?? [];
         final List allAssignments = (assignData['assignments'] ?? [])
-    .where((a) => a['createdAt'] != null)
-    .toList();
+            .where((a) => a['createdAt'] != null)
+            .toList();
 
-allAssignments.sort((a, b) {
-  final aDate = DateTime.tryParse(a['createdAt']) ?? DateTime(2000);
-  final bDate = DateTime.tryParse(b['createdAt']) ?? DateTime(2000);
-  return bDate.compareTo(aDate); // 🔄 Latest first
-});
+        allAssignments.sort((a, b) {
+          final aDate = DateTime.tryParse(a['createdAt']) ?? DateTime(2000);
+          final bDate = DateTime.tryParse(b['createdAt']) ?? DateTime(2000);
+          return bDate.compareTo(aDate);
+        });
 
-assignments = allAssignments.take(3).toList();
-
+        assignments = allAssignments.take(3).toList();
 
         loading = false;
       });
@@ -144,84 +142,6 @@ assignments = allAssignments.take(3).toList();
   int get absent => attendance.where((a) => a['status'] == 'absent').length;
   int get leave => attendance.where((a) => a['status'] == 'leave').length;
 
-  Future<void> handleDownload(String? filePath) async {
-    if (filePath == null || filePath.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No file path provided')),
-      );
-      return;
-    }
-
-    final rawUrl = filePath.startsWith('http')
-        ? filePath
-        : 'https://erp.sirhindpublicschool.com:3000/$filePath';
-
-    final encodedUrl = Uri.encodeFull(rawUrl);
-    final fileName = encodedUrl.split('/').last;
-
-    try {
-      final storage = await Permission.storage.request();
-      final manage = await Permission.manageExternalStorage.request();
-
-      if (!storage.isGranted && !manage.isGranted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Storage permission denied')),
-        );
-        return;
-      }
-
-      final dir = await getExternalStorageDirectory();
-      final savePath = '${dir!.path}/$fileName';
-
-      final dio = Dio();
-      await dio.download(encodedUrl, savePath);
-
-      if (!mounted) return;
-
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          title: const Text('✅ File Downloaded'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.download_done_rounded, size: 48, color: Colors.green),
-              const SizedBox(height: 12),
-              Text(fileName, textAlign: TextAlign.center),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Close'),
-            ),
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(context);
-                if (await File(savePath).exists()) {
-                  final result = await OpenFilex.open(savePath);
-                  debugPrint('📂 OpenFilex result: ${result.message}');
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('File does not exist')),
-                  );
-                }
-              },
-              child: const Text('Open File'),
-            ),
-          ],
-        ),
-      );
-    } catch (e) {
-      debugPrint('Download error: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to download file\nError: $e')),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     if (loading) {
@@ -247,6 +167,7 @@ assignments = allAssignments.take(3).toList();
             _drawerItem(Icons.schedule, 'Time Table', '/timetable'),
             _drawerItem(Icons.calendar_month, 'Attendance', '/attendance'),
             _drawerItem(Icons.campaign, 'Circulars', '/circulars'),
+            _drawerItem(Icons.event_note, 'Leave Requests', '/leave'),
             _drawerItem(Icons.logout, 'Logout', '/login', isLogout: true),
           ],
         ),
@@ -393,7 +314,85 @@ assignments = allAssignments.take(3).toList();
     );
   }
 
-  Widget feeCard(String title, double amount, Color color) {
+  Future<void> handleDownload(String? filePath) async {
+    if (filePath == null || filePath.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No file path provided')),
+      );
+      return;
+    }
+
+    final rawUrl = filePath.startsWith('http')
+        ? filePath
+        : 'https://erp.sirhindpublicschool.com:3000/$filePath';
+
+    final encodedUrl = Uri.encodeFull(rawUrl);
+    final fileName = encodedUrl.split('/').last;
+
+    try {
+      final storage = await Permission.storage.request();
+      final manage = await Permission.manageExternalStorage.request();
+
+      if (!storage.isGranted && !manage.isGranted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Storage permission denied')),
+        );
+        return;
+      }
+
+      final dir = await getExternalStorageDirectory();
+      final savePath = '${dir!.path}/$fileName';
+
+      final dio = Dio();
+      await dio.download(encodedUrl, savePath);
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          title: const Text('✅ File Downloaded'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.download_done_rounded, size: 48, color: Colors.green),
+              const SizedBox(height: 12),
+              Text(fileName, textAlign: TextAlign.center),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                if (await File(savePath).exists()) {
+                  final result = await OpenFilex.open(savePath);
+                  debugPrint('📂 OpenFilex result: ${result.message}');
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('File does not exist')),
+                  );
+                }
+              },
+              child: const Text('Open File'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      debugPrint('Download error: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to download file\nError: $e')),
+      );
+    }
+  }
+
+  Widget feeCard(String title, double? amount, Color color) {
     return Expanded(
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
@@ -406,7 +405,7 @@ assignments = allAssignments.take(3).toList();
           children: [
             Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15)),
             const SizedBox(height: 4),
-            Text('₹${amount.toStringAsFixed(0)}', style: const TextStyle(color: Colors.white, fontSize: 16)),
+            Text('₹${(amount ?? 0).toStringAsFixed(0)}', style: const TextStyle(color: Colors.white, fontSize: 16)),
           ],
         ),
       ),
