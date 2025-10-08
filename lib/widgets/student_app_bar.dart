@@ -1,14 +1,13 @@
+// lib/widgets/student_app_bar.dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class StudentAppBar extends StatelessWidget implements PreferredSizeWidget {
-  final String studentName;
-  final BuildContext parentContext; // ✅ Added this
+  final BuildContext parentContext;
 
   const StudentAppBar({
     super.key,
-    required this.studentName,
-    required this.parentContext, // ✅ Added this
+    required this.parentContext,
   });
 
   Future<void> handleLogout() async {
@@ -23,30 +22,57 @@ class StudentAppBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     return AppBar(
-      backgroundColor: const Color(0xFF1976D2),
-      elevation: 6,
-      shadowColor: Colors.black.withOpacity(0.3),
-      leading: Builder(
-        builder: (ctx) => IconButton(
-          icon: const Icon(Icons.menu, color: Colors.white, size: 26),
-          onPressed: () {
-            Scaffold.of(ctx).openDrawer(); // ✅ Opens Drawer from internal context
-          },
+      automaticallyImplyLeading: false,
+      // keep the AppBar itself transparent and paint with flexibleSpace gradient
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      shadowColor: Colors.transparent,
+      flexibleSpace: Container(
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [
+              Color(0xFF6C63FF), // purple
+              Color(0xFF9B8CFF), // lighter purple
+              Color(0xFF6EC6FF), // soft cyan accent (subtle)
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
+            ),
+          ],
         ),
       ),
+      titleSpacing: 0,
       centerTitle: true,
-      title: Text(
-        'Welcome $studentName',
-        style: const TextStyle(
-          fontSize: 20,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 1.1,
+      title: const Text(
+        "The Pathseekers International\nSchool",
+        style: TextStyle(
           color: Colors.white,
+          fontSize: 16.5,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.6,
+          height: 1.18,
+          shadows: [
+            Shadow(color: Colors.black26, offset: Offset(0, 1), blurRadius: 2)
+          ],
+        ),
+        textAlign: TextAlign.center,
+      ),
+      leading: Builder(
+        builder: (ctx) => IconButton(
+          icon: const Icon(Icons.menu_rounded, color: Colors.white, size: 26),
+          onPressed: () => Scaffold.of(ctx).openDrawer(),
+          tooltip: 'Menu',
         ),
       ),
       actions: [
         IconButton(
-          icon: const Icon(Icons.logout, color: Colors.white, size: 26),
+          icon: const Icon(Icons.logout_rounded, color: Colors.white, size: 26),
           onPressed: handleLogout,
           tooltip: 'Logout',
         ),
@@ -55,5 +81,5 @@ class StudentAppBar extends StatelessWidget implements PreferredSizeWidget {
   }
 
   @override
-  Size get preferredSize => const Size.fromHeight(60);
+  Size get preferredSize => const Size.fromHeight(70);
 }

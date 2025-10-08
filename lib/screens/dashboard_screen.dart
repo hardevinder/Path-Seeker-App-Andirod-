@@ -1,19 +1,13 @@
-import 'dart:convert';
-import 'dart:io';
+// File: lib/screens/dashboard_screen.dart
 import 'dart:async';
-
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:pie_chart/pie_chart.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:dio/dio.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:open_filex/open_filex.dart';
+import 'package:http/http.dart' as http;
 
 import '../widgets/student_app_bar.dart';
+import '../constants/constants.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -23,392 +17,963 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  String studentName = '';
-  String currentUserId = '';
-  String username = '';
   bool loading = true;
-  int unreadCount = 0;
-  Timer? _refreshTimer;
+  String username = '';
+  String? studentName;
+  String? className;
+  String? sectionName;
 
-  final ScrollController _scrollController = ScrollController();
+  // KPI state
+  int present = 0, absent = 0, leaveCount = 0, totalDays = 0;
+  int assignTotal = 0, assignSubmitted = 0, assignGraded = 0, assignOverdue = 0;
+  double feeTotalDue = 0, feeVanDue = 0;
+  int diaryTotal = 0, diaryUnack = 0;
 
-  List assignments = [];
-  List fees = [];
-  List attendance = [];
+  // lists
+  List<Map<String, dynamic>> assignNext3 = [];
+  List<Map<String, dynamic>> recentCirculars = [];
+  List<Map<String, dynamic>> todayPeriods = [];
+
+  List<String> notifications = [];
+
+  late NumberFormat currencyFormat;
+
+  // Auto-scrolling slides
+  late PageController _pageController;
+  Timer? _pageTimer;
+  int _currentPage = 0;
+  final Duration slideInterval = const Duration(seconds: 5);
+  final Duration slideDuration = const Duration(milliseconds: 600);
+
+  // keep slideCount in a variable so auto-slide can respect it
+  int slideCount = 4;
 
   @override
   void initState() {
     super.initState();
-    loadUser();
-    _refreshTimer = Timer.periodic(Duration(seconds: 2), (timer) {
-      fetchDashboardData();
+    currencyFormat = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 2);
+    _loadInitial();
+
+    _pageController = PageController(viewportFraction: 0.92);
+    _startAutoSlide();
+  }
+
+  void _startAutoSlide() {
+    _pageTimer?.cancel();
+    _pageTimer = Timer.periodic(slideInterval, (_) {
+      if (_pageController.hasClients && slideCount > 0) {
+        _currentPage = (_currentPage + 1) % slideCount;
+        _pageController.animateToPage(_currentPage, duration: slideDuration, curve: Curves.easeInOut);
+        setState(() {});
+      }
     });
   }
 
   @override
   void dispose() {
-    _refreshTimer?.cancel();
-    _scrollController.dispose();
+    _pageTimer?.cancel();
+    _pageController.dispose();
     super.dispose();
   }
 
-  Future<void> loadUser() async {
+  Future<String?> _getToken() async {
     final prefs = await SharedPreferences.getInstance();
-    username = prefs.getString('username') ?? '';
-    currentUserId = prefs.getString('currentUserId') ?? '';
-
-    if (username.isEmpty) {
-      Navigator.pushReplacementNamed(context, '/login');
-      return;
-    }
-
-    await fetchDashboardData();
-    listenToUnreadMessages();
+    return prefs.getString('authToken');
   }
 
-  Future<void> fetchDashboardData() async {
+  Future<void> _loadInitial() async {
+    setState(() => loading = true);
+    final prefs = await SharedPreferences.getInstance();
+    username = prefs.getString('username') ?? prefs.getString('userId') ?? '';
+    notifications = prefs.getStringList('notifications') ?? [];
+    await _fetchAll();
+    setState(() => loading = false);
+  }
+
+  Future<void> _fetchAll() async {
+    final token = await _getToken();
+    if (token == null || baseUrl.isEmpty) return;
+
+    final headers = {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'};
+
+    await Future.wait([
+      _fetchStudentProfile(headers),
+      _fetchAttendance(headers),
+      _fetchAssignments(headers),
+      _fetchFees(headers),
+      _fetchDiarySummary(headers),
+      _fetchTodayTimetable(headers),
+      _fetchCirculars(headers),
+    ].map((f) => f.catchError((_) {})));
+
+    // update slideCount if any data changes number of slides you want to show
+    // For now we keep 4 slides (Attendance, Assignments, Fees, Diary)
+    slideCount = 4;
+    _startAutoSlide();
+  }
+
+  Future<void> _fetchStudentProfile(Map<String, String> headers) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('authToken') ?? '';
+      if (username.isEmpty) return;
+      final res = await http.get(Uri.parse('$baseUrl/StudentsApp/admission/$username/fees'), headers: headers);
+      if (res.statusCode == 200) {
+        final json = jsonDecode(res.body);
+        debugPrint('Student profile response: $json');
 
-      final feeRes = await http.get(
-        Uri.parse('https://erp.sirhindpublicschool.com:3000/StudentsApp/admission/$username/fees'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
+        String? pickName(Map<String, dynamic> j) {
+          final tryKeys = [
+            'name',
+            'studentName',
+            'student_name',
+            'displayName',
+            'fullName',
+            'full_name',
+            'firstName',
+            'first_name',
+            'preferredName',
+            'preferred_name'
+          ];
+          for (final k in tryKeys) {
+            final v = j[k];
+            if (v is String && v.trim().isNotEmpty) return v.trim();
+          }
+          if (j['student'] is Map) {
+            final s = Map<String, dynamic>.from(j['student']);
+            final v = pickName(s);
+            if (v != null) return v;
+          }
+          if (j['data'] is Map) {
+            final s = Map<String, dynamic>.from(j['data']);
+            final v = pickName(s);
+            if (v != null) return v;
+          }
+          if (j['profile'] is Map) {
+            final s = Map<String, dynamic>.from(j['profile']);
+            final v = pickName(s);
+            if (v != null) return v;
+          }
+          return null;
+        }
 
-      final assignRes = await http.get(
-        Uri.parse('https://erp.sirhindpublicschool.com:3000/student-assignments/student'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
+        String? candidate = pickName(Map<String, dynamic>.from(json));
 
-      final attRes = await http.get(
-        Uri.parse('https://erp.sirhindpublicschool.com:3000/attendance/student/me'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
+        bool looksNumeric(String s) => RegExp(r'^[\d\-\s]+$').hasMatch(s);
+        final admissionField = (json['admissionNumber'] ?? json['admission_no'] ?? json['admission'] ?? json['admissionNumber'])?.toString();
 
-      final feeData = jsonDecode(feeRes.body);
-      final assignData = jsonDecode(assignRes.body);
-      final attData = jsonDecode(attRes.body);
+        if (candidate != null) {
+          final c = candidate.trim();
+          if (c.isEmpty || looksNumeric(c) || (admissionField != null && c == admissionField.toString())) {
+            candidate = null;
+          }
+        }
 
-      setState(() {
-        studentName = feeData['name'];
-        fees = feeData['feeDetails'] ?? [];
-        attendance = attData ?? [];
-        final List allAssignments = (assignData['assignments'] ?? [])
-            .where((a) => a['createdAt'] != null)
+        String finalName;
+        if (candidate != null) {
+          finalName = candidate;
+        } else if (username.isNotEmpty && !looksNumeric(username)) {
+          finalName = username;
+        } else {
+          finalName = 'Student';
+        }
+
+        setState(() {
+          studentName = finalName;
+          className = json['class_name'] ?? json['class'] ?? className;
+          sectionName = json['section_name'] ?? sectionName;
+        });
+      } else {
+        debugPrint('Student profile fetch returned ${res.statusCode}');
+      }
+    } catch (e, st) {
+      debugPrint('Error fetching student profile: $e\n$st');
+    }
+  }
+
+  Future<void> _fetchAttendance(Map<String, String> headers) async {
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/attendance/student/me'), headers: headers);
+      if (res.statusCode == 200) {
+        final rows = jsonDecode(res.body) as List<dynamic>? ?? [];
+        final now = DateTime.now();
+        final monthRows = rows.where((r) {
+          final d = DateTime.tryParse(r['date']?.toString() ?? '') ?? DateTime(1970);
+          return d.month == now.month && d.year == now.year;
+        }).toList();
+        final p = monthRows.where((r) => (r['status'] ?? '').toString().toLowerCase() == 'present').length;
+        final a = monthRows.where((r) => (r['status'] ?? '').toString().toLowerCase() == 'absent').length;
+        final l = monthRows.where((r) => (r['status'] ?? '').toString().toLowerCase() == 'leave').length;
+        setState(() {
+          present = p;
+          absent = a;
+          leaveCount = l;
+          totalDays = monthRows.length;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _fetchAssignments(Map<String, String> headers) async {
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/student-assignments/student'), headers: headers);
+      if (res.statusCode == 200) {
+        final json = jsonDecode(res.body);
+        final list = (json['assignments'] as List<dynamic>?) ?? [];
+        int submitted = 0, graded = 0, overdue = 0;
+        final next3 = <Map<String, dynamic>>[];
+
+        for (final a in list) {
+          final sa = (a['StudentAssignments'] as List<dynamic>?)?.firstWhere((_) => true, orElse: () => null);
+          final status = (sa?['status'] ?? '').toString().toLowerCase();
+          if (status == 'submitted') submitted++;
+          if (status == 'graded') graded++;
+
+          final dueStr = sa?['dueDate'] ?? sa?['due_date'];
+          DateTime? due = dueStr != null ? DateTime.tryParse(dueStr.toString()) : null;
+          if (due != null && DateTime.now().isAfter(due.add(const Duration(days: 1))) && !['submitted', 'graded'].contains(status)) {
+            overdue++;
+          }
+        }
+
+        final upcoming = list
+            .where((a) {
+              final sa = (a['StudentAssignments'] as List<dynamic>?)?.firstWhere((_) => true, orElse: () => null);
+              final dueStr = sa?['dueDate'] ?? sa?['due_date'];
+              if (dueStr == null) return false;
+              final due = DateTime.tryParse(dueStr.toString());
+              if (due == null) return false;
+              final status = (sa?['status'] ?? '').toString().toLowerCase();
+              return !['submitted', 'graded'].contains(status) && DateTime.now().isBefore(due);
+            })
             .toList();
 
-        allAssignments.sort((a, b) {
-          final aDate = DateTime.tryParse(a['createdAt']) ?? DateTime(2000);
-          final bDate = DateTime.tryParse(b['createdAt']) ?? DateTime(2000);
-          return bDate.compareTo(aDate);
+        upcoming.sort((a, b) {
+          final da = DateTime.tryParse(((a['StudentAssignments'] as List?)?.first?['dueDate'] ?? ''));
+          final db = DateTime.tryParse(((b['StudentAssignments'] as List?)?.first?['dueDate'] ?? ''));
+          return (da ?? DateTime(9999)).compareTo(db ?? DateTime(9999));
         });
 
-        assignments = allAssignments.take(3).toList();
+        for (final a in upcoming.take(3)) {
+          final sa = (a['StudentAssignments'] as List?)?.first ?? {};
+          next3.add({
+            'id': a['id'],
+            'title': a['title'] ?? 'Untitled',
+            'due': sa['dueDate'] ?? sa['due_date'],
+          });
+        }
 
-        loading = false;
-      });
-    } catch (e) {
-      debugPrint('Dashboard Error: $e');
-      setState(() => loading = false);
-    }
+        setState(() {
+          assignTotal = list.length;
+          assignSubmitted = submitted;
+          assignGraded = graded;
+          assignOverdue = overdue;
+          assignNext3 = next3;
+        });
+      }
+    } catch (_) {}
   }
 
-  void listenToUnreadMessages() {
-    FirebaseFirestore.instance.collection('chats').snapshots().listen((snapshot) {
-      int count = 0;
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
-        final unreadMap = data['unreadCounts'] ?? {};
-        final value = unreadMap[currentUserId];
-        if (value is int && value > 0) {
-          count += value;
+  Future<void> _fetchFees(Map<String, String> headers) async {
+    try {
+      if (username.isEmpty) return;
+      final res = await http.get(Uri.parse('$baseUrl/StudentsApp/admission/$username/fees'), headers: headers);
+      if (res.statusCode == 200) {
+        final json = jsonDecode(res.body);
+        final fees = (json['feeDetails'] as List<dynamic>?) ?? [];
+
+        double parseNum(dynamic v) {
+          if (v == null) return 0.0;
+          if (v is num) return v.toDouble();
+          if (v is String) return double.tryParse(v.replaceAll(',', '')) ?? 0.0;
+          return 0.0;
+        }
+
+        final totalDue = fees.fold<double>(0.0, (s, f) => s + parseNum(f['finalAmountDue'] ?? f['final_amount_due']));
+        final vanObj = json['vanFee'] ?? {};
+        final vanCost = parseNum(vanObj['perHeadTotalDue'] ?? vanObj['transportCost'] ?? 0);
+        final vanRecv = parseNum(vanObj['totalVanFeeReceived'] ?? 0);
+        final vanCon = parseNum(vanObj['totalVanFeeConcession'] ?? 0);
+        final vanDueNum = (vanCost - (vanRecv + vanCon)).clamp(0, double.infinity).toDouble();
+
+        setState(() {
+          feeTotalDue = totalDue;
+          feeVanDue = vanDueNum;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _fetchDiarySummary(Map<String, String> headers) async {
+    try {
+      final latestRes = await http.get(Uri.parse('$baseUrl/diaries/student/feed/list?page=1&pageSize=5&order=date:DESC'), headers: headers);
+      final latestJson = jsonDecode(latestRes.body);
+      final latestItems = (latestJson is Map && latestJson['data'] is List) ? (latestJson['data'] as List) : [];
+      final total = int.tryParse((latestJson['pagination']?['total']?.toString() ?? '${latestItems.length}')) ?? latestItems.length;
+
+      final unackRes = await http.get(Uri.parse('$baseUrl/diaries/student/feed/list?page=1&pageSize=1&order=date:DESC&onlyUnacknowledged=true'), headers: headers);
+      final unackJson = jsonDecode(unackRes.body);
+      final unack = int.tryParse((unackJson['pagination']?['total']?.toString() ?? '0')) ?? 0;
+
+      setState(() {
+        diaryTotal = total;
+        diaryUnack = unack;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _fetchCirculars(Map<String, String> headers) async {
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/circulars'), headers: headers);
+      if (res.statusCode == 200) {
+        final json = jsonDecode(res.body);
+        final list = (json['circulars'] as List<dynamic>?) ?? [];
+        final filtered = list.where((c) {
+          final aud = (c['audience'] ?? '').toString().toLowerCase();
+          return aud == 'student' || aud == 'both' || aud.isEmpty;
+        }).toList();
+        filtered.sort((a, b) {
+          final da = DateTime.tryParse(a['createdAt']?.toString() ?? '') ?? DateTime(1970);
+          final db = DateTime.tryParse(b['createdAt']?.toString() ?? '') ?? DateTime(1970);
+          return db.compareTo(da);
+        });
+        setState(() {
+          recentCirculars = filtered.take(5).map((e) => Map<String, dynamic>.from(e)).toList();
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _fetchTodayTimetable(Map<String, String> headers) async {
+    try {
+      final pRes = await http.get(Uri.parse('$baseUrl/periods'), headers: headers);
+      final tRes = await http.get(Uri.parse('$baseUrl/period-class-teacher-subject/student/timetable'), headers: headers);
+      final periods = (jsonDecode(pRes.body) as List<dynamic>?) ?? [];
+      final ttbRaw = jsonDecode(tRes.body);
+      final ttb = (ttbRaw is List) ? ttbRaw : (ttbRaw['timetable'] as List<dynamic>?) ?? [];
+
+      final days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      final todayIdx = DateTime.now().weekday % 7;
+      final todayName = days[todayIdx];
+
+      final mapByPeriod = <dynamic, dynamic>{};
+      for (final r in ttb) {
+        if (r['day'] == todayName) mapByPeriod[r['periodId']] = r;
+      }
+
+      final items = <Map<String, dynamic>>[];
+      for (final p in periods) {
+        final id = p['id'];
+        final r = mapByPeriod[id];
+        if (r != null) {
+          items.add({
+            'period': p['period_name'] ?? p['name'],
+            'time': (p['start_time'] != null && p['end_time'] != null) ? '${p['start_time']}–${p['end_time']}' : '',
+            'subject': r['Subject']?['name'] ?? r['subjectId'] ?? '—',
+            'teacher': r['Teacher']?['name'] ?? '—',
+          });
         }
       }
-
-      if (mounted) {
-        setState(() {
-          unreadCount = count;
-        });
-      }
-    });
+      setState(() => todayPeriods = items);
+    } catch (_) {}
   }
-
-  double get totalFee => fees.fold(0.0, (sum, f) => sum + (f['originalFeeDue'] ?? 0));
-  double get totalDue => fees.fold(0.0, (sum, f) => sum + (f['finalAmountDue'] ?? 0));
-  double get feePaid => totalFee - totalDue;
-
-  int get present => attendance.where((a) => a['status'] == 'present').length;
-  int get absent => attendance.where((a) => a['status'] == 'absent').length;
-  int get leave => attendance.where((a) => a['status'] == 'leave').length;
 
   @override
   Widget build(BuildContext context) {
-    if (loading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
+    final presencePct = totalDays > 0 ? ((present / (totalDays > 0 ? totalDays : 1)) * 100).round() : 0;
+
+    // lighter, friendly background gradient
+    final bgGradient = LinearGradient(
+      colors: [Color(0xFFF7FAFF), Color(0xFFEFF6FF)],
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+    );
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FC),
-      appBar: StudentAppBar(studentName: studentName, parentContext: context),
-      drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            DrawerHeader(
-              decoration: const BoxDecoration(color: Colors.indigo),
-              child: Text('Welcome $studentName', style: const TextStyle(color: Colors.white, fontSize: 18)),
-            ),
-            _drawerItem(Icons.dashboard, 'Dashboard', '/dashboard'),
-            _drawerItem(Icons.receipt_long, 'Fee Details', '/fee-details'),
-            _drawerItem(Icons.assignment, 'Assignments', '/assignments'),
-            _drawerItem(Icons.schedule, 'Time Table', '/timetable'),
-            _drawerItem(Icons.calendar_month, 'Attendance', '/attendance'),
-            _drawerItem(Icons.campaign, 'Circulars', '/circulars'),
-            _drawerItem(Icons.event_note, 'Leave Requests', '/leave'),
-            _drawerItem(Icons.logout, 'Logout', '/login', isLogout: true),
-          ],
-        ),
-      ),
-      body: SingleChildScrollView(
-        controller: _scrollController,
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text('Fee Summary', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      // apply a soft gradient background via Container
+      body: Container(
+        decoration: BoxDecoration(gradient: bgGradient),
+        child: SafeArea(
+          child: RefreshIndicator(
+            onRefresh: () async => await _fetchAll(),
+            color: Colors.deepPurpleAccent,
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
               children: [
-                feeCard('Total', totalFee, Colors.indigo),
-                feeCard('Paid', feePaid, Colors.green),
-                feeCard('Due', totalDue, Colors.redAccent),
+                _heroSection(),
+                const SizedBox(height: 14),
+                // Auto-scrolling slides (Attendance / Assignments / Fees / Diary)
+                _slidesPanel(presencePct),
+                const SizedBox(height: 16),
+                // removed duplicated static KPI strip to avoid repeating the slide content
+                // _kpiRow(presencePct),
+                // keep the rest of the dashboard
+                const SizedBox(height: 12),
+                _todayCardNoClock(),
+                const SizedBox(height: 12),
+                _quickActionsGrid(),
+                const SizedBox(height: 16),
+                _recentCircularsFullWidth(),
+                const SizedBox(height: 16),
+                _assignmentsPanel(),
+                const SizedBox(height: 16),
+                _timetableSection(),
+                const SizedBox(height: 30),
               ],
             ),
-            const SizedBox(height: 24),
-            const Align(
-              alignment: Alignment.center,
-              child: Text(
-                'Attendance',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Center(
-              child: PieChart(
-                dataMap: {
-                  "Present": present.toDouble(),
-                  "Absent": absent.toDouble(),
-                  "Leave": leave.toDouble(),
-                },
-                chartType: ChartType.ring,
-                baseChartColor: Colors.grey[200]!,
-                ringStrokeWidth: 55,
-                chartRadius: MediaQuery.of(context).size.width / 3.2,
-                centerText: "",
-                legendOptions: const LegendOptions(
-                  showLegends: true,
-                  legendPosition: LegendPosition.bottom,
-                  showLegendsInRow: true,
-                  legendTextStyle: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                chartValuesOptions: const ChartValuesOptions(
-                  showChartValues: true,
-                  showChartValuesInPercentage: true,
-                  showChartValuesOutside: true,
-                  showChartValueBackground: false,
-                  decimalPlaces: 0,
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            const Text('Latest Assignments', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            for (int i = 0; i < assignments.length; i++)
-              Card(
-                color: i % 2 == 0 ? Colors.orange.shade50 : Colors.lightBlue.shade50,
-                elevation: 3,
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(assignments[i]['title'], style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 6),
-                      if (assignments[i]['AssignmentFiles'] != null && assignments[i]['AssignmentFiles'].isNotEmpty)
-                        for (var file in assignments[i]['AssignmentFiles'])
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Expanded(child: Text(file['fileName'])),
-                              TextButton(
-                                onPressed: () => handleDownload(file['filePath']),
-                                child: const Text("Download"),
-                              ),
-                            ],
-                          )
-                      else
-                        const Text("No files available"),
-                    ],
-                  ),
-                ),
-              ),
-          ],
+          ),
         ),
       ),
-      floatingActionButton: Stack(
-        alignment: Alignment.topRight,
-        children: [
-          FloatingActionButton(
-            backgroundColor: Colors.white,
-            elevation: 5,
-            onPressed: () {
-              Navigator.pushNamed(context, '/contacts');
+      // floatingActionButton: FloatingActionButton(
+      //   backgroundColor: const Color(0xFF6C63FF),
+      //   onPressed: () => Navigator.pushNamed(context, '/chat'),
+      //   child: const Icon(Icons.chat_bubble_outline),
+      // ),
+      appBar: StudentAppBar(parentContext: context),
+    );
+  }
+
+  // ------------------------- Slides panel -------------------------
+  Widget _slidesPanel(int presencePct) {
+    final slides = [
+      _slideCard(
+        title: 'Attendance',
+        subtitle: '$presencePct% this month',
+        trailing: '$present / $totalDays',
+        icon: Icons.calendar_today,
+        gradient: const [Color(0xFFDDEAFE), Color(0xFFBEE3F8)],
+        iconColor: const Color(0xFF106FA4),
+      ),
+      _slideCard(
+        title: 'Assignments',
+        subtitle: '$assignTotal total • $assignOverdue overdue',
+        trailing: '$assignSubmitted submitted',
+        icon: Icons.task_alt,
+        gradient: const [Color(0xFFFDE8E8), Color(0xFFFFD2E0)],
+        iconColor: const Color(0xFFB82E4A),
+      ),
+      _slideCard(
+        title: 'Fees',
+        subtitle: 'Due: ${currencyFormat.format(feeTotalDue)}',
+        trailing: 'Transport: ${currencyFormat.format(feeVanDue)}',
+        icon: Icons.attach_money,
+        gradient: const [Color(0xFFE8F9EC), Color(0xFFDAF4D9)],
+        iconColor: const Color(0xFF0F7A3A),
+      ),
+      _slideCard(
+        title: 'Diary',
+        subtitle: '$diaryTotal entries • $diaryUnack unacknowledged',
+        trailing: 'Open diary',
+        icon: Icons.menu_book,
+        gradient: const [Color(0xFFFFF3D9), Color(0xFFFFE3B5)],
+        iconColor: const Color(0xFFB86B00),
+      ),
+    ];
+
+    // ensure slideCount matches actual slides
+    slideCount = slides.length;
+
+    return Column(
+      children: [
+        SizedBox(
+          height: 150,
+          child: PageView.builder(
+            controller: _pageController,
+            onPageChanged: (i) {
+              setState(() {
+                _currentPage = i;
+              });
             },
-            child: const Icon(Icons.chat_bubble_outline, color: Colors.deepPurple),
+            itemCount: slides.length,
+            itemBuilder: (context, index) {
+              return slides[index];
+            },
           ),
-          if (unreadCount > 0)
-            Positioned(
-              right: 4,
-              top: 4,
-              child: Container(
-                padding: const EdgeInsets.all(5),
-                decoration: BoxDecoration(
-                  color: Colors.redAccent,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2),
-                  boxShadow: [
-                    BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 4)
-                  ],
-                ),
-                constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
-                child: Text(
-                  '$unreadCount',
-                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                  textAlign: TextAlign.center,
-                ),
+        ),
+        const SizedBox(height: 10),
+        // simple dots indicator
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(slideCount, (i) {
+            final active = i == _currentPage;
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              width: active ? 18 : 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: active ? const Color(0xFF6C63FF) : Colors.black.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(8),
               ),
+            );
+          }),
+        ),
+      ],
+    );
+  }
+
+  Widget _slideCard({required String title, required String subtitle, required String trailing, required IconData icon, required List<Color> gradient, required Color iconColor}) {
+    return GestureDetector(
+      onTap: () {
+        // quick navigation by title
+        if (title == 'Attendance') Navigator.pushNamed(context, '/attendance');
+        if (title == 'Assignments') Navigator.pushNamed(context, '/assignments');
+        if (title == 'Fees') Navigator.pushNamed(context, '/fee-details');
+        if (title == 'Diary') Navigator.pushNamed(context, '/diaries');
+      },
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(colors: gradient),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 14, offset: const Offset(0, 8))],
+          border: Border.all(color: Colors.black.withOpacity(0.03)),
+        ),
+        child: Row(children: [
+          Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 6))],
+            ),
+            child: Icon(icon, color: iconColor, size: 32),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
+              Text(title, style: TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 6),
+              Text(subtitle, style: TextStyle(color: Colors.black54, fontSize: 13)),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.14), borderRadius: BorderRadius.circular(12)),
+                    child: Text(trailing, style: TextStyle(color: Colors.black87, fontWeight: FontWeight.w700)),
+                  ),
+                ],
+              )
+            ]),
+          ),
+          const SizedBox(width: 8),
+          Icon(Icons.chevron_right, color: Colors.black26),
+        ]),
+      ),
+    );
+  }
+
+  // ------------------------- Today card (no clock) -------------------------
+  Widget _todayCardNoClock() {
+    final dateStr = DateFormat.yMMMMEEEEd().format(DateTime.now());
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(colors: [Color(0xFFFFFFFF), Color(0xFFF7FAFF)]),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 6))],
+        border: Border.all(color: Colors.black.withOpacity(0.03)),
+      ),
+      child: Row(children: [
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Today', style: TextStyle(color: Colors.black87, fontSize: 14, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 6),
+            Text(dateStr, style: TextStyle(color: Colors.black54, fontSize: 14)),
+            const SizedBox(height: 6),
+            Text('Quick overview of your day', style: TextStyle(color: Colors.black45, fontSize: 12)),
+          ]),
+        ),
+        const SizedBox(width: 12),
+        Container(
+          width: 72,
+          height: 72,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(colors: [Color(0xFF6C63FF), Color(0xFF9B8CFF)]),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 8, offset: const Offset(0, 6))],
+          ),
+          child: Center(child: Icon(Icons.today, size: 36, color: Colors.white)),
+        )
+      ]),
+    );
+  }
+
+  // ------------------------- KPI row (with subtle gradients) -------------------------
+  // kept for reuse, but not included in the view to avoid repeating the slide content
+  Widget _kpiRow(int presencePct) {
+    return SizedBox(
+      height: 120,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        children: [
+          _kpiCard("Attendance", "$presencePct%", "$present/$totalDays present", [const Color(0xFFEAF5FF), const Color(0xFFD6EEFF)], Icons.calendar_today, Color(0xFF106FA4)),
+          const SizedBox(width: 12),
+          _kpiCard("Assignments", "$assignTotal", "Overdue: $assignOverdue", [const Color(0xFFFFEEF6), const Color(0xFFFFE0F0)], Icons.task_alt, Color(0xFFB82E4A)),
+          const SizedBox(width: 12),
+          _kpiCard("Fees Due", currencyFormat.format(feeTotalDue), "Van: ${currencyFormat.format(feeVanDue)}", [const Color(0xFFEFFCEC), const Color(0xFFDFF8DF)], Icons.attach_money, Color(0xFF0F7A3A)),
+          const SizedBox(width: 12),
+          _kpiCard("Diary", "$diaryTotal", "Unack: $diaryUnack", [const Color(0xFFFFF9E6), const Color(0xFFFFF0CC)], Icons.menu_book, Color(0xFFB86B00)),
+        ],
+      ),
+    );
+  }
+
+  Widget _kpiCard(String title, String value, String sub, List<Color> gradient, IconData leadingIcon, Color leadColor) {
+    return Container(
+      width: 220,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: gradient),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 6))],
+        border: Border.all(color: Colors.black.withOpacity(0.02)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8)),
+            child: Icon(leadingIcon, color: leadColor),
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: Text(title, style: TextStyle(color: Colors.black87, fontWeight: FontWeight.w700))),
+        ]),
+        const Spacer(),
+        Text(value, style: TextStyle(color: Colors.black87, fontSize: 20, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 6),
+        Text(sub, style: TextStyle(color: Colors.black54, fontSize: 12)),
+      ]),
+    );
+  }
+
+  Widget _quickActionsGrid() {
+    final items = [
+      {'label': 'Attendance', 'icon': Icons.calendar_today, 'route': '/attendance', 'badge': '${presencePct()}%'},
+      {'label': 'Assignments', 'icon': Icons.task_alt, 'route': '/assignments', 'badge': '$assignOverdue overdue'},
+      {'label': 'Diary', 'icon': Icons.menu_book, 'route': '/diaries', 'badge': '$diaryUnack pending'},
+      {'label': 'Circulars', 'icon': Icons.campaign, 'route': '/circulars', 'badge': '${recentCirculars.length} new'},
+      {'label': 'Timetable', 'icon': Icons.schedule, 'route': '/timetable', 'badge': '${todayPeriods.length} periods'},
+      {'label': 'Fees', 'icon': Icons.attach_money, 'route': '/fee-details', 'badge': currencyFormat.format(feeVanDue)},
+      // {'label': 'Chat', 'icon': Icons.chat, 'route': '/chat', 'badge': 'Live'},
+    ];
+
+    return GridView.count(
+      crossAxisCount: MediaQuery.of(context).size.width > 900 ? 4 : (MediaQuery.of(context).size.width > 600 ? 3 : 2),
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: 12,
+      crossAxisSpacing: 12,
+      childAspectRatio: 3 / 2,
+      children: items.map((it) {
+        return GestureDetector(
+          onTap: () => Navigator.pushNamed(context, it['route'] as String),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 6))],
+              border: Border.all(color: Colors.black.withOpacity(0.03)),
+            ),
+            padding: const EdgeInsets.all(12),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(color: const Color(0xFFF3F4FF), borderRadius: BorderRadius.circular(10)),
+                  child: Icon(it['icon'] as IconData, color: const Color(0xFF6C63FF)),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(color: const Color(0xFFF0F4FF), borderRadius: BorderRadius.circular(10)),
+                  child: Text(it['badge'] as String, style: TextStyle(color: Colors.black54, fontSize: 12)),
+                ),
+              ]),
+              const Spacer(),
+              Text(it['label'] as String, style: TextStyle(color: Colors.black87, fontWeight: FontWeight.w700)),
+            ]),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  // ------------------------- Assignments panel (full width) -------------------------
+  Widget _assignmentsPanel() {
+    return Container(
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 6))]),
+      child: Column(children: [
+        _panelHeader(Icons.assignment, 'Upcoming Assignments', const Color(0xFF6C63FF)),
+        Padding(padding: const EdgeInsets.all(8), child: _assignmentsCard()),
+      ]),
+    );
+  }
+
+  Widget _assignmentsCard() {
+    if (loading) return _skeleton();
+    if (assignNext3.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(children: [
+          Icon(Icons.check_circle_outline, size: 48, color: Colors.black26),
+          const SizedBox(height: 12),
+          Text('No upcoming assignments', style: TextStyle(color: Colors.black54)),
+        ]),
+      );
+    }
+    return Column(
+      children: assignNext3.map((a) {
+        final due = a['due']?.toString();
+        final dueF = due != null ? DateFormat.yMMMd().format(DateTime.tryParse(due) ?? DateTime.now()) : '—';
+        return ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          leading: Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), color: const Color(0xFFF3F4FF)),
+            child: const Icon(Icons.task_alt, color: Color(0xFF6C63FF)),
+          ),
+          title: Text(a['title']?.toString() ?? 'Untitled', style: const TextStyle(color: Colors.black87)),
+          subtitle: Text('Due: $dueF', style: TextStyle(color: Colors.black54, fontSize: 12)),
+          trailing: ElevatedButton(
+            onPressed: () => Navigator.pushNamed(context, '/assignments'),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6C63FF), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))),
+            child: const Text('Open'),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _timetableSection() {
+    return Container(
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 6))]),
+      child: Column(
+        children: [
+          const ListTile(title: Text("Today's Timetable", style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold))),
+          if (todayPeriods.isEmpty)
+            Padding(padding: const EdgeInsets.all(16), child: Text("No periods today", style: TextStyle(color: Colors.black54)))
+          else
+            Column(
+              children: todayPeriods
+                  .map((p) => ListTile(
+                        leading: CircleAvatar(backgroundColor: const Color(0xFFF3F4FF), child: const Icon(Icons.book, color: Color(0xFF6C63FF))),
+                        title: Text(p['subject'] ?? "-", style: const TextStyle(color: Colors.black87)),
+                        subtitle: Text(p['teacher'] ?? "-", style: TextStyle(color: Colors.black54)),
+                        trailing: Text(p['time'] ?? "", style: TextStyle(color: Colors.black54)),
+                      ))
+                  .toList(),
             ),
         ],
       ),
     );
   }
 
-  Widget _drawerItem(IconData icon, String title, String route, {bool isLogout = false}) {
-    return ListTile(
-      leading: Icon(icon),
-      title: Text(title),
-      onTap: () async {
-        Navigator.pop(context);
-        if (isLogout) {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.remove('authToken');
-          Navigator.pushReplacementNamed(context, route);
-        } else {
-          Navigator.pushReplacementNamed(context, route);
-        }
-      },
+  // full width recent circulars card placed after tiles (single source)
+  Widget _recentCircularsFullWidth() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 6))]),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.campaign, color: Color(0xFF0F9D58)),
+          const SizedBox(width: 8),
+          const Text('Recent Circulars', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.black87)),
+          const Spacer(),
+          TextButton(onPressed: () => Navigator.pushNamed(context, '/circulars'), child: const Text('See all', style: TextStyle(color: Colors.black54)))
+        ]),
+        const SizedBox(height: 8),
+        if (loading)
+          _skeleton()
+        else if (recentCirculars.isEmpty)
+          Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Text('No recent circulars', style: TextStyle(color: Colors.black54)))
+        else
+          Column(
+            children: recentCirculars.map((c) {
+              final title = c['title'] ?? 'Untitled';
+              final created = DateTime.tryParse(c['createdAt']?.toString() ?? '') ?? DateTime.now();
+              return Container(
+                width: double.infinity,
+                margin: const EdgeInsets.symmetric(vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(color: const Color(0xFFF7FAFF), borderRadius: BorderRadius.circular(10)),
+                child: Row(children: [
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(title, style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 4),
+                      Text(DateFormat.yMMMd().format(created), style: TextStyle(color: Colors.black54, fontSize: 12)),
+                    ]),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton(onPressed: () => Navigator.pushNamed(context, '/circulars'), style: OutlinedButton.styleFrom(side: BorderSide(color: Colors.black.withOpacity(0.06))), child: const Text('View', style: TextStyle(color: Colors.black87)))
+                ]),
+              );
+            }).toList(),
+          )
+      ]),
     );
   }
 
-  Future<void> handleDownload(String? filePath) async {
-    if (filePath == null || filePath.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No file path provided')),
-      );
-      return;
-    }
-
-    final rawUrl = filePath.startsWith('http')
-        ? filePath
-        : 'https://erp.sirhindpublicschool.com:3000/$filePath';
-
-    final encodedUrl = Uri.encodeFull(rawUrl);
-    final fileName = encodedUrl.split('/').last;
-
-    try {
-      final storage = await Permission.storage.request();
-      final manage = await Permission.manageExternalStorage.request();
-
-      if (!storage.isGranted && !manage.isGranted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Storage permission denied')),
-        );
-        return;
-      }
-
-      final dir = await getExternalStorageDirectory();
-      final savePath = '${dir!.path}/$fileName';
-
-      final dio = Dio();
-      await dio.download(encodedUrl, savePath);
-
-      if (!mounted) return;
-
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          title: const Text('✅ File Downloaded'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.download_done_rounded, size: 48, color: Colors.green),
-              const SizedBox(height: 12),
-              Text(fileName, textAlign: TextAlign.center),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Close'),
-            ),
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(context);
-                if (await File(savePath).exists()) {
-                  final result = await OpenFilex.open(savePath);
-                  debugPrint('📂 OpenFilex result: ${result.message}');
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('File does not exist')),
-                  );
-                }
-              },
-              child: const Text('Open File'),
-            ),
-          ],
-        ),
-      );
-    } catch (e) {
-      debugPrint('Download error: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to download file\nError: $e')),
-      );
-    }
+  // small helpers
+  Widget _panelHeader(IconData icon, String title, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(gradient: LinearGradient(colors: [color.withOpacity(0.12), Colors.transparent]), borderRadius: const BorderRadius.vertical(top: Radius.circular(12))),
+      child: Row(children: [
+        Icon(icon, color: color),
+        const SizedBox(width: 8),
+        Text(title, style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w700)),
+      ]),
+    );
   }
 
-  Widget feeCard(String title, double? amount, Color color) {
-    return Expanded(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.8),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 8),
-        child: Column(
-          children: [
-            Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15)),
-            const SizedBox(height: 4),
-            Text('₹${(amount ?? 0).toStringAsFixed(0)}', style: const TextStyle(color: Colors.white, fontSize: 16)),
-          ],
-        ),
+  Widget _heroSection() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(colors: [Color(0xFF6C63FF), Color(0xFF9B8CFF)]),
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 14, offset: const Offset(0, 8))],
       ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: 34,
+            backgroundColor: Colors.white,
+            child: Text(
+              (studentName ?? username).isNotEmpty ? (studentName ?? username)[0].toUpperCase() : 'S',
+              style: const TextStyle(color: Color(0xFF6C63FF), fontWeight: FontWeight.w900, fontSize: 28),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(
+                'Welcome, ${_displayName()}',
+                style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Have a great day at school! \u2605',
+                style: TextStyle(color: Colors.white.withOpacity(0.95), fontSize: 13),
+              ),
+              const SizedBox(height: 10),
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                if (className != null) _chip("Class", className!, textColor: Colors.white),
+                if (sectionName != null) _chip("Section", sectionName!, textColor: Colors.white),
+                _chip("Attendance", "${presencePct()}%", textColor: Colors.white),
+              ]),
+            ]),
+          ),
+          IconButton(
+            onPressed: _openNotifications,
+            icon: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                const Icon(Icons.notifications, color: Colors.white70),
+                if (notifications.isNotEmpty)
+                  Positioned(
+                    right: -6,
+                    top: -6,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
+                      constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                      child: Text(
+                        '${notifications.length}',
+                        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _displayName() {
+    final name = (studentName ?? username ?? 'Student').toString();
+    return name.isEmpty ? 'Student' : name;
+  }
+
+  int presencePct() {
+    return totalDays > 0 ? ((present / (totalDays > 0 ? totalDays : 1)) * 100).round() : 0;
+  }
+
+  Widget _chip(String label, String value, {Color textColor = Colors.white}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(color: Colors.white.withOpacity(0.18), borderRadius: BorderRadius.circular(18)),
+      child: Text("$label: $value", style: TextStyle(color: textColor, fontSize: 12)),
+    );
+  }
+
+  Widget _skeleton() {
+    return Padding(
+      padding: const EdgeInsets.all(12.0),
+      child: Column(children: [
+        Container(height: 16, color: Colors.black.withOpacity(0.04), margin: const EdgeInsets.symmetric(vertical: 6)),
+        Container(height: 14, color: Colors.black.withOpacity(0.04), margin: const EdgeInsets.symmetric(vertical: 6)),
+        Container(height: 14, color: Colors.black.withOpacity(0.04), margin: const EdgeInsets.symmetric(vertical: 6)),
+      ]),
+    );
+  }
+
+  void _openNotifications() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 24),
+          child: Container(
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
+            padding: const EdgeInsets.all(16),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Row(children: [
+                const Text('Notifications', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.black87)),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, color: Colors.black54),
+                  onPressed: () async {
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.remove('notifications');
+                    setState(() => notifications.clear());
+                    Navigator.pop(context);
+                  },
+                )
+              ]),
+              if (notifications.isEmpty)
+                Padding(padding: const EdgeInsets.all(24), child: Text('No notifications', style: TextStyle(color: Colors.black54)))
+              else
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemBuilder: (_, i) => ListTile(
+                      leading: CircleAvatar(backgroundColor: const Color(0xFF6C63FF), child: const Icon(Icons.info, color: Colors.white)),
+                      title: Text(notifications[i], style: const TextStyle(color: Colors.black87)),
+                      subtitle: Text('Just now', style: TextStyle(color: Colors.black54)),
+                    ),
+                    separatorBuilder: (_, __) => Divider(color: Colors.black.withOpacity(0.06)),
+                    itemCount: notifications.length,
+                  ),
+                ),
+            ]),
+          ),
+        );
+      },
     );
   }
 }
