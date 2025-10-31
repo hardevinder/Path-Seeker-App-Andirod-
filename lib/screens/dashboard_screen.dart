@@ -1,4 +1,4 @@
-// File: lib/screens/dashboard_screen.dart
+// lib/screens/dashboard_screen.dart
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 
 import '../widgets/student_app_bar.dart';
+import '../widgets/student_drawer_menu.dart';
 import '../constants/constants.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -17,11 +18,15 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  // ---- state ----
   bool loading = true;
   String username = '';
   String? studentName;
   String? className;
   String? sectionName;
+
+  // role flag
+  bool isTeacher = false;
 
   // KPI state
   int present = 0, absent = 0, leaveCount = 0, totalDays = 0;
@@ -48,14 +53,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // keep slideCount in a variable so auto-slide can respect it
   int slideCount = 4;
 
+  // scaffold key for reliable drawer control
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
   @override
   void initState() {
     super.initState();
     currencyFormat = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 2);
-    _loadInitial();
-
     _pageController = PageController(viewportFraction: 0.92);
     _startAutoSlide();
+    _loadInitial();
   }
 
   void _startAutoSlide() {
@@ -86,6 +93,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final prefs = await SharedPreferences.getInstance();
     username = prefs.getString('username') ?? prefs.getString('userId') ?? '';
     notifications = prefs.getStringList('notifications') ?? [];
+
+    // determine if user is teacher (so we can conditionally show teacher actions)
+    final activeRole = prefs.getString('activeRole')?.toLowerCase() ?? '';
+    isTeacher = activeRole == 'teacher';
+
     await _fetchAll();
     setState(() => loading = false);
   }
@@ -106,8 +118,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _fetchCirculars(headers),
     ].map((f) => f.catchError((_) {})));
 
-    // update slideCount if any data changes number of slides you want to show
-    // For now we keep 4 slides (Attendance, Assignments, Fees, Diary)
     slideCount = 4;
     _startAutoSlide();
   }
@@ -118,8 +128,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final res = await http.get(Uri.parse('$baseUrl/StudentsApp/admission/$username/fees'), headers: headers);
       if (res.statusCode == 200) {
         final json = jsonDecode(res.body);
-        debugPrint('Student profile response: $json');
-
         String? pickName(Map<String, dynamic> j) {
           final tryKeys = [
             'name',
@@ -158,7 +166,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         String? candidate = pickName(Map<String, dynamic>.from(json));
 
         bool looksNumeric(String s) => RegExp(r'^[\d\-\s]+$').hasMatch(s);
-        final admissionField = (json['admissionNumber'] ?? json['admission_no'] ?? json['admission'] ?? json['admissionNumber'])?.toString();
+        final admissionField = (json['admissionNumber'] ?? json['admission_no'] ?? json['admission'])?.toString();
 
         if (candidate != null) {
           final c = candidate.trim();
@@ -181,8 +189,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           className = json['class_name'] ?? json['class'] ?? className;
           sectionName = json['section_name'] ?? sectionName;
         });
-      } else {
-        debugPrint('Student profile fetch returned ${res.statusCode}');
       }
     } catch (e, st) {
       debugPrint('Error fetching student profile: $e\n$st');
@@ -369,44 +375,64 @@ class _DashboardScreenState extends State<DashboardScreen> {
             'time': (p['start_time'] != null && p['end_time'] != null) ? '${p['start_time']}–${p['end_time']}' : '',
             'subject': r['Subject']?['name'] ?? r['subjectId'] ?? '—',
             'teacher': r['Teacher']?['name'] ?? '—',
+            'start_time': p['start_time'],
+            'end_time': p['end_time'],
           });
         }
       }
+
+      // Sort items by start time
+      items.sort((a, b) {
+        final aStart = a['start_time'] as String?;
+        final bStart = b['start_time'] as String?;
+        if (aStart == null && bStart == null) return 0;
+        if (aStart == null) return 1;
+        if (bStart == null) return -1;
+        final aParts = aStart.split(':');
+        final bParts = bStart.split(':');
+        final aH = int.tryParse(aParts[0]) ?? 0;
+        final aM = int.tryParse(aParts.length > 1 ? aParts[1] : '0') ?? 0;
+        final bH = int.tryParse(bParts[0]) ?? 0;
+        final bM = int.tryParse(bParts.length > 1 ? bParts[1] : '0') ?? 0;
+        final aTime = aH * 60 + aM;
+        final bTime = bH * 60 + bM;
+        return aTime.compareTo(bTime);
+      });
+
       setState(() => todayPeriods = items);
     } catch (_) {}
   }
 
+  // ---------------- UI ----------------
   @override
   Widget build(BuildContext context) {
     final presencePct = totalDays > 0 ? ((present / (totalDays > 0 ? totalDays : 1)) * 100).round() : 0;
 
-    // lighter, friendly background gradient
+    // richer background gradient for a more "wonderful" look
     final bgGradient = LinearGradient(
-      colors: [Color(0xFFF7FAFF), Color(0xFFEFF6FF)],
+      colors: [const Color(0xFFF7FAFF), const Color(0xFFF3F0FF), const Color(0xFFEFF6FF)],
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
+      stops: const [0.0, 0.5, 1.0],
     );
 
     return Scaffold(
-      // apply a soft gradient background via Container
+      key: _scaffoldKey,
+      appBar: StudentAppBar(parentContext: context, scaffoldKey: _scaffoldKey, title: 'Welcome to Pathseekers'),
+      drawer: StudentDrawerMenu(),
       body: Container(
         decoration: BoxDecoration(gradient: bgGradient),
         child: SafeArea(
           child: RefreshIndicator(
             onRefresh: () async => await _fetchAll(),
-            color: Colors.deepPurpleAccent,
+            color: const Color(0xFF6C63FF),
             child: ListView(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
               children: [
                 _heroSection(),
                 const SizedBox(height: 14),
-                // Auto-scrolling slides (Attendance / Assignments / Fees / Diary)
                 _slidesPanel(presencePct),
                 const SizedBox(height: 16),
-                // removed duplicated static KPI strip to avoid repeating the slide content
-                // _kpiRow(presencePct),
-                // keep the rest of the dashboard
-                const SizedBox(height: 12),
                 _todayCardNoClock(),
                 const SizedBox(height: 12),
                 _quickActionsGrid(),
@@ -422,12 +448,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ),
       ),
-      // floatingActionButton: FloatingActionButton(
-      //   backgroundColor: const Color(0xFF6C63FF),
-      //   onPressed: () => Navigator.pushNamed(context, '/chat'),
-      //   child: const Icon(Icons.chat_bubble_outline),
-      // ),
-      appBar: StudentAppBar(parentContext: context),
     );
   }
 
@@ -468,7 +488,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
     ];
 
-    // ensure slideCount matches actual slides
     slideCount = slides.length;
 
     return Column(
@@ -477,19 +496,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
           height: 150,
           child: PageView.builder(
             controller: _pageController,
-            onPageChanged: (i) {
-              setState(() {
-                _currentPage = i;
-              });
-            },
+            onPageChanged: (i) => setState(() => _currentPage = i),
             itemCount: slides.length,
-            itemBuilder: (context, index) {
-              return slides[index];
-            },
+            itemBuilder: (context, index) => slides[index],
           ),
         ),
         const SizedBox(height: 10),
-        // simple dots indicator
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: List.generate(slideCount, (i) {
@@ -513,7 +525,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _slideCard({required String title, required String subtitle, required String trailing, required IconData icon, required List<Color> gradient, required Color iconColor}) {
     return GestureDetector(
       onTap: () {
-        // quick navigation by title
         if (title == 'Attendance') Navigator.pushNamed(context, '/attendance');
         if (title == 'Assignments') Navigator.pushNamed(context, '/assignments');
         if (title == 'Fees') Navigator.pushNamed(context, '/fee-details');
@@ -542,29 +553,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
           const SizedBox(width: 14),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
-              Text(title, style: TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.w900)),
+              Text(title, style: const TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.w900)),
               const SizedBox(height: 6),
-              Text(subtitle, style: TextStyle(color: Colors.black54, fontSize: 13)),
+              Text(subtitle, style: const TextStyle(color: Colors.black54, fontSize: 13)),
               const SizedBox(height: 6),
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.14), borderRadius: BorderRadius.circular(12)),
-                    child: Text(trailing, style: TextStyle(color: Colors.black87, fontWeight: FontWeight.w700)),
-                  ),
-                ],
-              )
+              Row(children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.14), borderRadius: BorderRadius.circular(12)),
+                  child: Text(trailing, style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w700)),
+                ),
+              ]),
             ]),
           ),
           const SizedBox(width: 8),
-          Icon(Icons.chevron_right, color: Colors.black26),
+          const Icon(Icons.chevron_right, color: Colors.black26),
         ]),
       ),
     );
   }
 
-  // ------------------------- Today card (no clock) -------------------------
+  // ------------------------- Today card -------------------------
   Widget _todayCardNoClock() {
     final dateStr = DateFormat.yMMMMEEEEd().format(DateTime.now());
 
@@ -595,62 +604,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
             borderRadius: BorderRadius.circular(16),
             boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 8, offset: const Offset(0, 6))],
           ),
-          child: Center(child: Icon(Icons.today, size: 36, color: Colors.white)),
+          child: const Center(child: Icon(Icons.today, size: 36, color: Colors.white)),
         )
       ]),
     );
   }
 
-  // ------------------------- KPI row (with subtle gradients) -------------------------
-  // kept for reuse, but not included in the view to avoid repeating the slide content
-  Widget _kpiRow(int presencePct) {
-    return SizedBox(
-      height: 120,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        children: [
-          _kpiCard("Attendance", "$presencePct%", "$present/$totalDays present", [const Color(0xFFEAF5FF), const Color(0xFFD6EEFF)], Icons.calendar_today, Color(0xFF106FA4)),
-          const SizedBox(width: 12),
-          _kpiCard("Assignments", "$assignTotal", "Overdue: $assignOverdue", [const Color(0xFFFFEEF6), const Color(0xFFFFE0F0)], Icons.task_alt, Color(0xFFB82E4A)),
-          const SizedBox(width: 12),
-          _kpiCard("Fees Due", currencyFormat.format(feeTotalDue), "Van: ${currencyFormat.format(feeVanDue)}", [const Color(0xFFEFFCEC), const Color(0xFFDFF8DF)], Icons.attach_money, Color(0xFF0F7A3A)),
-          const SizedBox(width: 12),
-          _kpiCard("Diary", "$diaryTotal", "Unack: $diaryUnack", [const Color(0xFFFFF9E6), const Color(0xFFFFF0CC)], Icons.menu_book, Color(0xFFB86B00)),
-        ],
-      ),
-    );
-  }
-
-  Widget _kpiCard(String title, String value, String sub, List<Color> gradient, IconData leadingIcon, Color leadColor) {
-    return Container(
-      width: 220,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(colors: gradient),
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 6))],
-        border: Border.all(color: Colors.black.withOpacity(0.02)),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8)),
-            child: Icon(leadingIcon, color: leadColor),
-          ),
-          const SizedBox(width: 8),
-          Expanded(child: Text(title, style: TextStyle(color: Colors.black87, fontWeight: FontWeight.w700))),
-        ]),
-        const Spacer(),
-        Text(value, style: TextStyle(color: Colors.black87, fontSize: 20, fontWeight: FontWeight.w800)),
-        const SizedBox(height: 6),
-        Text(sub, style: TextStyle(color: Colors.black54, fontSize: 12)),
-      ]),
-    );
-  }
-
+  // ------------------------- Quick actions -------------------------
   Widget _quickActionsGrid() {
     final items = [
       {'label': 'Attendance', 'icon': Icons.calendar_today, 'route': '/attendance', 'badge': '${presencePct()}%'},
@@ -659,11 +619,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
       {'label': 'Circulars', 'icon': Icons.campaign, 'route': '/circulars', 'badge': '${recentCirculars.length} new'},
       {'label': 'Timetable', 'icon': Icons.schedule, 'route': '/timetable', 'badge': '${todayPeriods.length} periods'},
       {'label': 'Fees', 'icon': Icons.attach_money, 'route': '/fee-details', 'badge': currencyFormat.format(feeVanDue)},
-      // {'label': 'Chat', 'icon': Icons.chat, 'route': '/chat', 'badge': 'Live'},
     ];
 
+    // If logged-in user is a teacher, show substitutions quick-action
+    if (isTeacher) {
+      items.add({'label': 'Substitutions', 'icon': Icons.swap_horiz, 'route': '/teacher/substitutions', 'badge': '—'});
+    }
+
+    final cross = MediaQuery.of(context).size.width > 900 ? 4 : (MediaQuery.of(context).size.width > 600 ? 3 : 2);
+
     return GridView.count(
-      crossAxisCount: MediaQuery.of(context).size.width > 900 ? 4 : (MediaQuery.of(context).size.width > 600 ? 3 : 2),
+      crossAxisCount: cross,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       mainAxisSpacing: 12,
@@ -671,7 +637,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       childAspectRatio: 3 / 2,
       children: items.map((it) {
         return GestureDetector(
-          onTap: () => Navigator.pushNamed(context, it['route'] as String),
+          onTap: () {
+            final route = it['route'] as String;
+            Navigator.pushNamed(context, route);
+          },
           child: Container(
             decoration: BoxDecoration(
               color: Colors.white,
@@ -685,7 +654,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 Container(
                   width: 44,
                   height: 44,
-                  decoration: BoxDecoration(color: const Color(0xFFF3F4FF), borderRadius: BorderRadius.circular(10)),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(colors: [const Color(0xFFeef3ff), const Color(0xFFf9f5ff)]),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                   child: Icon(it['icon'] as IconData, color: const Color(0xFF6C63FF)),
                 ),
                 const Spacer(),
@@ -754,28 +726,68 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _timetableSection() {
     return Container(
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 6))]),
-      child: Column(
-        children: [
-          const ListTile(title: Text("Today's Timetable", style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold))),
-          if (todayPeriods.isEmpty)
-            Padding(padding: const EdgeInsets.all(16), child: Text("No periods today", style: TextStyle(color: Colors.black54)))
-          else
-            Column(
-              children: todayPeriods
-                  .map((p) => ListTile(
-                        leading: CircleAvatar(backgroundColor: const Color(0xFFF3F4FF), child: const Icon(Icons.book, color: Color(0xFF6C63FF))),
-                        title: Text(p['subject'] ?? "-", style: const TextStyle(color: Colors.black87)),
-                        subtitle: Text(p['teacher'] ?? "-", style: TextStyle(color: Colors.black54)),
-                        trailing: Text(p['time'] ?? "", style: TextStyle(color: Colors.black54)),
-                      ))
-                  .toList(),
-            ),
-        ],
-      ),
+      child: Column(children: [
+        const ListTile(title: Text("Today's Timetable", style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold))),
+        if (todayPeriods.isEmpty)
+          Padding(padding: const EdgeInsets.all(16), child: Text("No periods today", style: TextStyle(color: Colors.black54)))
+        else
+          Column(children: todayPeriods.map((p) {
+            final now = DateTime.now();
+            final startStr = p['start_time'];
+            final endStr = p['end_time'];
+            bool isCurrent = false;
+            if (startStr != null && endStr != null && startStr is String && endStr is String) {
+              try {
+                final startParts = startStr.split(':');
+                final endParts = endStr.split(':');
+                final start = DateTime(now.year, now.month, now.day, int.parse(startParts[0]), int.parse(startParts.length > 1 ? startParts[1] : '0'));
+                final end = DateTime(now.year, now.month, now.day, int.parse(endParts[0]), int.parse(endParts.length > 1 ? endParts[1] : '0'));
+                isCurrent = now.isAfter(start) && now.isBefore(end);
+              } catch (e) {
+                // Ignore parsing errors
+              }
+            }
+
+            return ListTile(
+              leading: CircleAvatar(backgroundColor: const Color(0xFFF3F4FF), child: const Icon(Icons.book, color: Color(0xFF6C63FF))),
+              title: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      p['subject'] ?? "-",
+                      style: const TextStyle(color: Colors.black87),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ),
+                  if (isCurrent) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.green,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text(
+                        'LIVE',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              subtitle: Text(p['teacher'] ?? "-", style: TextStyle(color: Colors.black54)),
+              trailing: Text(p['time'] ?? "", style: TextStyle(color: Colors.black54)),
+            );
+          }).toList()),
+      ]),
     );
   }
 
-  // full width recent circulars card placed after tiles (single source)
   Widget _recentCircularsFullWidth() {
     return Container(
       padding: const EdgeInsets.all(12),
@@ -794,34 +806,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
         else if (recentCirculars.isEmpty)
           Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Text('No recent circulars', style: TextStyle(color: Colors.black54)))
         else
-          Column(
-            children: recentCirculars.map((c) {
-              final title = c['title'] ?? 'Untitled';
-              final created = DateTime.tryParse(c['createdAt']?.toString() ?? '') ?? DateTime.now();
-              return Container(
-                width: double.infinity,
-                margin: const EdgeInsets.symmetric(vertical: 6),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                decoration: BoxDecoration(color: const Color(0xFFF7FAFF), borderRadius: BorderRadius.circular(10)),
-                child: Row(children: [
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(title, style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w700)),
-                      const SizedBox(height: 4),
-                      Text(DateFormat.yMMMd().format(created), style: TextStyle(color: Colors.black54, fontSize: 12)),
-                    ]),
-                  ),
-                  const SizedBox(width: 8),
-                  OutlinedButton(onPressed: () => Navigator.pushNamed(context, '/circulars'), style: OutlinedButton.styleFrom(side: BorderSide(color: Colors.black.withOpacity(0.06))), child: const Text('View', style: TextStyle(color: Colors.black87)))
-                ]),
-              );
-            }).toList(),
-          )
+          Column(children: recentCirculars.map((c) {
+            final title = c['title'] ?? 'Untitled';
+            final created = DateTime.tryParse(c['createdAt']?.toString() ?? '') ?? DateTime.now();
+            return Container(
+              width: double.infinity,
+              margin: const EdgeInsets.symmetric(vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(color: const Color(0xFFF7FAFF), borderRadius: BorderRadius.circular(10)),
+              child: Row(children: [
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(title, style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 4),
+                    Text(DateFormat.yMMMd().format(created), style: TextStyle(color: Colors.black54, fontSize: 12)),
+                  ]),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton(onPressed: () => Navigator.pushNamed(context, '/circulars'), style: OutlinedButton.styleFrom(side: BorderSide(color: Colors.black.withOpacity(0.06))), child: const Text('View', style: TextStyle(color: Colors.black87)))
+              ]),
+            );
+          }).toList())
       ]),
     );
   }
 
-  // small helpers
+  // helpers
   Widget _panelHeader(IconData icon, String title, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -842,63 +852,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
         borderRadius: BorderRadius.circular(14),
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 14, offset: const Offset(0, 8))],
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CircleAvatar(
-            radius: 34,
-            backgroundColor: Colors.white,
-            child: Text(
-              (studentName ?? username).isNotEmpty ? (studentName ?? username)[0].toUpperCase() : 'S',
-              style: const TextStyle(color: Color(0xFF6C63FF), fontWeight: FontWeight.w900, fontSize: 28),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(
-                'Welcome, ${_displayName()}',
-                style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Have a great day at school! \u2605',
-                style: TextStyle(color: Colors.white.withOpacity(0.95), fontSize: 13),
-              ),
-              const SizedBox(height: 10),
-              Wrap(spacing: 8, runSpacing: 8, children: [
-                if (className != null) _chip("Class", className!, textColor: Colors.white),
-                if (sectionName != null) _chip("Section", sectionName!, textColor: Colors.white),
-                _chip("Attendance", "${presencePct()}%", textColor: Colors.white),
-              ]),
-            ]),
-          ),
-          IconButton(
-            onPressed: _openNotifications,
-            icon: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                const Icon(Icons.notifications, color: Colors.white70),
-                if (notifications.isNotEmpty)
-                  Positioned(
-                    right: -6,
-                    top: -6,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
-                      constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
-                      child: Text(
-                        '${notifications.length}',
-                        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        CircleAvatar(
+          radius: 34,
+          backgroundColor: Colors.white,
+          child: Text((studentName ?? username).isNotEmpty ? (studentName ?? username)[0].toUpperCase() : 'S', style: const TextStyle(color: Color(0xFF6C63FF), fontWeight: FontWeight.w900, fontSize: 28)),
+        ),
+        const SizedBox(width: 14),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Welcome, ${_displayName()}', style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          Text('Have a great day at school! \u2605', style: TextStyle(color: Colors.white.withOpacity(0.95), fontSize: 13)),
+          const SizedBox(height: 10),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            if (className != null) _chip("Class", className!, textColor: Colors.white),
+            if (sectionName != null) _chip("Section", sectionName!, textColor: Colors.white),
+            _chip("Attendance", "${presencePct()}%", textColor: Colors.white),
+          ]),
+        ])),
+        IconButton(
+          onPressed: _openNotifications,
+          icon: Stack(clipBehavior: Clip.none, children: [
+            const Icon(Icons.notifications, color: Colors.white70),
+            if (notifications.isNotEmpty)
+              Positioned(right: -6, top: -6, child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
+                constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                child: Text('${notifications.length}', style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+              )),
+          ]),
+        ),
+      ]),
     );
   }
 
@@ -907,9 +892,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return name.isEmpty ? 'Student' : name;
   }
 
-  int presencePct() {
-    return totalDays > 0 ? ((present / (totalDays > 0 ? totalDays : 1)) * 100).round() : 0;
-  }
+  int presencePct() => totalDays > 0 ? ((present / (totalDays > 0 ? totalDays : 1)) * 100).round() : 0;
 
   Widget _chip(String label, String value, {Color textColor = Colors.white}) {
     return Container(
@@ -920,14 +903,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _skeleton() {
-    return Padding(
-      padding: const EdgeInsets.all(12.0),
-      child: Column(children: [
-        Container(height: 16, color: Colors.black.withOpacity(0.04), margin: const EdgeInsets.symmetric(vertical: 6)),
-        Container(height: 14, color: Colors.black.withOpacity(0.04), margin: const EdgeInsets.symmetric(vertical: 6)),
-        Container(height: 14, color: Colors.black.withOpacity(0.04), margin: const EdgeInsets.symmetric(vertical: 6)),
-      ]),
-    );
+    return Padding(padding: const EdgeInsets.all(12.0), child: Column(children: [
+      Container(height: 16, color: Colors.black.withOpacity(0.04), margin: const EdgeInsets.symmetric(vertical: 6)),
+      Container(height: 14, color: Colors.black.withOpacity(0.04), margin: const EdgeInsets.symmetric(vertical: 6)),
+      Container(height: 14, color: Colors.black.withOpacity(0.04), margin: const EdgeInsets.symmetric(vertical: 6)),
+    ]));
   }
 
   void _openNotifications() {
@@ -945,31 +925,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
               Row(children: [
                 const Text('Notifications', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.black87)),
                 const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, color: Colors.black54),
-                  onPressed: () async {
-                    final prefs = await SharedPreferences.getInstance();
-                    await prefs.remove('notifications');
-                    setState(() => notifications.clear());
-                    Navigator.pop(context);
-                  },
-                )
+                IconButton(icon: const Icon(Icons.delete_outline, color: Colors.black54), onPressed: () async {
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.remove('notifications');
+                  setState(() => notifications.clear());
+                  Navigator.pop(context);
+                }),
               ]),
               if (notifications.isEmpty)
                 Padding(padding: const EdgeInsets.all(24), child: Text('No notifications', style: TextStyle(color: Colors.black54)))
               else
-                Flexible(
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    itemBuilder: (_, i) => ListTile(
-                      leading: CircleAvatar(backgroundColor: const Color(0xFF6C63FF), child: const Icon(Icons.info, color: Colors.white)),
-                      title: Text(notifications[i], style: const TextStyle(color: Colors.black87)),
-                      subtitle: Text('Just now', style: TextStyle(color: Colors.black54)),
-                    ),
-                    separatorBuilder: (_, __) => Divider(color: Colors.black.withOpacity(0.06)),
-                    itemCount: notifications.length,
+                Flexible(child: ListView.separated(
+                  shrinkWrap: true,
+                  itemBuilder: (_, i) => ListTile(
+                    leading: CircleAvatar(backgroundColor: const Color(0xFF6C63FF), child: const Icon(Icons.info, color: Colors.white)),
+                    title: Text(notifications[i], style: const TextStyle(color: Colors.black87)),
+                    subtitle: Text('Just now', style: TextStyle(color: Colors.black54)),
                   ),
-                ),
+                  separatorBuilder: (_, __) => Divider(color: Colors.black.withOpacity(0.06)),
+                  itemCount: notifications.length,
+                )),
             ]),
           ),
         );

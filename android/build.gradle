@@ -4,12 +4,13 @@ buildscript {
     repositories {
         google()
         mavenCentral()
+        // maven { url 'https://plugins.gradle.org/m2' } // uncomment if you need plugin artifacts
     }
 
     dependencies {
         classpath 'com.android.tools.build:gradle:8.3.0'
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
-        classpath 'com.google.gms:google-services:4.4.0' // ✅ Firebase plugin
+        classpath 'com.google.gms:google-services:4.4.0' // Firebase plugin - update if needed
     }
 }
 
@@ -31,9 +32,10 @@ tasks.register("clean", Delete) {
     delete rootProject.buildDir
 }
 
-// ✅ Updated Kotlin JVM target fix for Kotlin 1.9+
+// Make sure Kotlin's JVM target matches the JDK/AGP requirements.
+// Use Java 17 for Kotlin 1.9.x + AGP 8.x
 tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
     kotlinJavaToolchain {
-        jvmTarget.set(JavaLanguageVersion.of(8))
+        jvmTarget.set(JavaLanguageVersion.of(17))
     }
 }

@@ -5,49 +5,66 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+// import your constants with an alias to avoid top-level name collisions
+import '../constants/constants.dart' as AppConstants;
 import '../models/circular.dart';
-import '../constants/constants.dart';
 
 class ApiService {
   static const Duration _timeout = Duration(seconds: 15);
   static const String _authKey = 'authToken';
 
-  /// Save auth token (e.g. after login)
+  /// Default base URL is read from lib/constants/constants.dart via alias.
+  /// You can override at runtime with setBaseUrl (useful for emulator / testing).
+  static String baseUrl = AppConstants.baseUrl;
+
+  /// Override default baseUrl at runtime.
+  static void setBaseUrl(String url) {
+    if (url.isNotEmpty) baseUrl = url;
+  }
+
+  /// Save auth token after login
   static Future<void> setAuthToken(String token) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_authKey, token);
   }
 
-  /// Clear saved token (e.g. logout)
+  /// Clear saved token (logout)
   static Future<void> clearAuthToken() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_authKey);
   }
 
-  /// Get headers including Authorization if token exists
-  static Future<Map<String, String>> _buildHeaders([Map<String, String>? additional]) async {
+  /// Read saved token
+  static Future<String?> _getToken() async {
     final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString(_authKey);
+    return prefs.getString(_authKey);
+  }
+
+  /// Build request headers and include Authorization: Bearer <token> if present.
+  static Future<Map<String, String>> _buildHeaders([Map<String, String>? extra]) async {
+    final token = await _getToken();
     final headers = <String, String>{
       'Accept': 'application/json',
+      'Content-Type': 'application/json',
       if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
-      if (additional != null) ...additional,
+      if (extra != null) ...extra,
     };
     return headers;
   }
 
-  /// Low-level GET that returns http.Response for custom callers.
+  // ------------------------
+  // Low-level HTTP helpers
+  // ------------------------
+
   static Future<http.Response> rawGet(String endpoint, {Map<String, String>? extraHeaders}) async {
     final uri = Uri.parse('$baseUrl$endpoint');
     final headers = await _buildHeaders(extraHeaders);
     final resp = await http.get(uri, headers: headers).timeout(_timeout);
-    // debug
     // ignore: avoid_print
-    print('[ApiService] GET $uri status=${resp.statusCode}');
+    print('[ApiService] GET $uri → ${resp.statusCode}');
     return resp;
   }
 
-  /// Low-level POST that returns http.Response for custom callers.
   static Future<http.Response> rawPost(String endpoint, Map<String, dynamic> body,
       {Map<String, String>? extraHeaders}) async {
     final uri = Uri.parse('$baseUrl$endpoint');
@@ -56,11 +73,36 @@ class ApiService {
       if (extraHeaders != null) ...extraHeaders,
     });
     final resp = await http.post(uri, headers: headers, body: jsonEncode(body)).timeout(_timeout);
-    // debug
     // ignore: avoid_print
-    print('[ApiService] POST $uri status=${resp.statusCode}');
+    print('[ApiService] POST $uri → ${resp.statusCode}');
     return resp;
   }
+
+  static Future<http.Response> rawPut(String endpoint, Map<String, dynamic> body,
+      {Map<String, String>? extraHeaders}) async {
+    final uri = Uri.parse('$baseUrl$endpoint');
+    final headers = await _buildHeaders({
+      'Content-Type': 'application/json',
+      if (extraHeaders != null) ...extraHeaders,
+    });
+    final resp = await http.put(uri, headers: headers, body: jsonEncode(body)).timeout(_timeout);
+    // ignore: avoid_print
+    print('[ApiService] PUT $uri → ${resp.statusCode}');
+    return resp;
+  }
+
+  static Future<http.Response> rawDelete(String endpoint, {Map<String, String>? extraHeaders}) async {
+    final uri = Uri.parse('$baseUrl$endpoint');
+    final headers = await _buildHeaders(extraHeaders);
+    final resp = await http.delete(uri, headers: headers).timeout(_timeout);
+    // ignore: avoid_print
+    print('[ApiService] DELETE $uri → ${resp.statusCode}');
+    return resp;
+  }
+
+  // ------------------------
+  // Example higher-level helper
+  // ------------------------
 
   /// Fetch circulars robustly: supports both `[{...},...]` and `{"circulars":[...]}`
   static Future<List<Circular>> fetchCirculars() async {

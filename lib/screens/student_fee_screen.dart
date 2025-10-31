@@ -1,6 +1,7 @@
 // lib/screens/student_fee_screen.dart
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,6 +10,31 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 
 import '../constants/constants.dart'; // baseUrl, etc.
+
+Map<String, dynamic>? parseJwt(String token) {
+  try {
+    List<String> parts = token.split('.');
+    if (parts.length != 3) {
+      return null;
+    }
+    String payload = parts[1];
+    // Add padding
+    while (payload.length % 4 != 0) {
+      payload += '=';
+    }
+    // Replace url-safe
+    payload = payload.replaceAll('-', '+').replaceAll('_', '/');
+    String jsonString = utf8.decode(base64Url.decode(payload));
+    return json.decode(jsonString);
+  } catch (e) {
+    debugPrint('parseJwt error: $e');
+    return null;
+  }
+}
+
+String normalizeRole(String r) => r.toLowerCase().trim();
+
+String normalizeAdmission(String s) => s.replaceAll('/', '-').trim();
 
 class StudentFeeScreen extends StatefulWidget {
   const StudentFeeScreen({super.key});
@@ -24,6 +50,7 @@ class _StudentFeeScreenState extends State<StudentFeeScreen> with SingleTickerPr
   Map<String, dynamic>? studentDetails;
   List<dynamic> transactionHistory = [];
   Map<int, Map<String, dynamic>> vanByHead = {};
+  List<bool> _expandedFees = [];
 
   late TabController _tabController;
   Timer? _pollTimer;
@@ -42,6 +69,13 @@ class _StudentFeeScreenState extends State<StudentFeeScreen> with SingleTickerPr
   final Duration _kpiPageInterval = const Duration(seconds: 4);
   final Duration _kpiPageAnim = const Duration(milliseconds: 500);
 
+  // Student switcher
+  Map<String, dynamic>? family;
+  String activeAdmission = '';
+  List<Map<String, dynamic>> studentsList = [];
+  List<String> _roles = [];
+  bool canSeeStudentSwitcher = false;
+
   @override
   void initState() {
     super.initState();
@@ -49,7 +83,7 @@ class _StudentFeeScreenState extends State<StudentFeeScreen> with SingleTickerPr
 
     _kpiPageController = PageController(viewportFraction: 0.72);
 
-    _loadAll();
+    _loadFamilyAndActive();
 
     _pollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (mounted) _loadPartial();
@@ -73,58 +107,131 @@ class _StudentFeeScreenState extends State<StudentFeeScreen> with SingleTickerPr
     super.dispose();
   }
 
+  Future<String> _getActiveAdmission() async {
+    final prefs = await SharedPreferences.getInstance();
+    String? storedActive = prefs.getString('activeStudentAdmission');
+    if (storedActive != null) return normalizeAdmission(storedActive);
+    String? stored = prefs.getString('username') ?? prefs.getString('admissionNumber');
+    if (stored != null) return normalizeAdmission(stored);
+    final token = prefs.getString('authToken') ?? prefs.getString('token');
+    if (token != null) {
+      final payload = parseJwt(token);
+      final adm = payload?['admission_number'] ?? payload?['username'];
+      if (adm != null) return normalizeAdmission(adm.toString());
+    }
+    return '';
+  }
+
   Future<String?> _getToken() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('authToken') ?? prefs.getString('token');
   }
 
-  Future<void> _loadAll() async {
+  Future<void> _loadFamilyAndActive() async {
+    final prefs = await SharedPreferences.getInstance();
+    final familyJson = prefs.getString('family');
+    if (familyJson != null) {
+      try {
+        family = json.decode(familyJson);
+      } catch (e) {
+        debugPrint('Failed to parse family: $e');
+        family = null;
+      }
+    }
+    activeAdmission = await _getActiveAdmission();
+    studentsList = <Map<String, dynamic>>[];
+    if (family?['student'] != null) {
+      var self = Map<String, dynamic>.from(family!['student']);
+      self['isSelf'] = true;
+      studentsList.add(self);
+    }
+    final siblingsList = family?['siblings'] as List? ?? [];
+    for (var s in siblingsList) {
+      var sib = Map<String, dynamic>.from(s);
+      sib['isSelf'] = false;
+      studentsList.add(sib);
+    }
+    await _loadRoles();
+    if (mounted) {
+      setState(() {});
+    }
+    if (activeAdmission.isNotEmpty) {
+      final token = await _getToken();
+      if (token != null && mounted) {
+        await _loadAllForAdmission(activeAdmission, token);
+      } else if (mounted) {
+        setState(() {
+          loading = false;
+          error = 'Missing auth token. Please login.';
+        });
+      }
+    } else if (mounted) {
+      setState(() {
+        loading = false;
+        error = 'No active student found.';
+      });
+    }
+  }
+
+  Future<void> _loadRoles() async {
+    final prefs = await SharedPreferences.getInstance();
+    String? stored = prefs.getString('roles');
+    if (stored != null) {
+      try {
+        final list = json.decode(stored) as List;
+        _roles = list.map((r) => normalizeRole(r.toString())).toList();
+      } catch (e) {
+        debugPrint('Failed to parse roles: $e');
+      }
+    }
+    if (_roles.isEmpty) {
+      String? single = prefs.getString('userRole');
+      if (single != null) _roles = [normalizeRole(single)];
+    }
+    if (_roles.isEmpty) {
+      final tokenStr = prefs.getString('authToken') ?? prefs.getString('token');
+      if (tokenStr != null) {
+        final payload = parseJwt(tokenStr);
+        if (payload != null) {
+          if (payload['roles'] is List) {
+            _roles = (payload['roles'] as List).map((r) => normalizeRole(r.toString())).toList();
+          } else if (payload['role'] != null) {
+            _roles = [normalizeRole(payload['role'].toString())];
+          }
+        }
+      }
+    }
+    canSeeStudentSwitcher = _roles.any((r) => r == 'student' || r == 'parent');
+  }
+
+  Future<void> _loadAllForAdmission(String admission, String token) async {
     setState(() {
       loading = true;
       error = null;
     });
     try {
-      final token = await _getToken();
-      if (token == null) {
-        setState(() {
-          error = 'Missing auth token. Please login.';
-          loading = false;
-        });
-        return;
-      }
-      final prefs = await SharedPreferences.getInstance();
-      final username = prefs.getString('username') ?? prefs.getString('admissionNumber');
-      if (username == null) {
-        setState(() {
-          error = 'No username/admission number found.';
-          loading = false;
-        });
-        return;
-      }
-
       await Future.wait([
-        _fetchStudentDetails(username, token),
-        _fetchTransactionHistory(username, token),
+        _fetchStudentDetails(admission, token),
+        _fetchTransactionHistory(admission, token),
         _fetchVanFeeByHead(token),
       ]);
     } catch (e, st) {
-      debugPrint('loadAll error $e\n$st');
-      setState(() => error = 'Failed to load data');
+      debugPrint('loadAllForAdmission error $e\n$st');
+      if (mounted) setState(() => error = 'Failed to load data');
     } finally {
-      setState(() => loading = false);
+      if (mounted) setState(() => loading = false);
     }
   }
 
   Future<void> _loadPartial() async {
+    final admission = await _getActiveAdmission();
+    if (admission.isEmpty) return;
+    final token = await _getToken();
+    if (token == null) return;
     try {
-      final token = await _getToken();
-      if (token == null) return;
-      final prefs = await SharedPreferences.getInstance();
-      final username = prefs.getString('username') ?? prefs.getString('admissionNumber');
-      if (username == null) return;
       await Future.wait([
-        _fetchStudentDetails(username, token),
-        _fetchTransactionHistory(username, token),
+        _fetchStudentDetails(admission, token),
+        _fetchTransactionHistory(admission, token),
         _fetchVanFeeByHead(token),
       ]);
     } catch (e) {
@@ -140,16 +247,24 @@ class _StudentFeeScreenState extends State<StudentFeeScreen> with SingleTickerPr
       );
       if (res.statusCode == 200) {
         final json = jsonDecode(res.body);
-        setState(() {
-          if (json is Map && json.containsKey('data')) {
-            studentDetails = Map<String, dynamic>.from(json['data']);
-          } else if (json is Map) {
-            studentDetails = Map<String, dynamic>.from(json);
-          } else {
-            studentDetails = {};
-          }
-          error = null;
-        });
+        if (mounted) {
+          setState(() {
+            if (json is Map && json.containsKey('data')) {
+              studentDetails = Map<String, dynamic>.from(json['data']);
+            } else if (json is Map) {
+              studentDetails = Map<String, dynamic>.from(json);
+            } else {
+              studentDetails = {};
+            }
+            if (studentDetails?['feeDetails'] is List) {
+              final len = (studentDetails!['feeDetails'] as List).length;
+              _expandedFees = List<bool>.filled(len, false);
+            } else {
+              _expandedFees = [];
+            }
+            error = null;
+          });
+        }
       } else {
         debugPrint('student details fetch failed: ${res.statusCode} ${res.body}');
       }
@@ -163,12 +278,14 @@ class _StudentFeeScreenState extends State<StudentFeeScreen> with SingleTickerPr
       final res = await http.get(Uri.parse('$baseUrl/StudentsApp/feehistory/$admissionNumber'), headers: {'Authorization': 'Bearer $token'});
       if (res.statusCode == 200) {
         final json = jsonDecode(res.body);
-        if (json is Map && json['success'] == true && json['data'] is List) {
-          setState(() => transactionHistory = List<dynamic>.from(json['data']));
-        } else if (json is List) {
-          setState(() => transactionHistory = List<dynamic>.from(json));
-        } else {
-          setState(() => transactionHistory = []);
+        if (mounted) {
+          if (json is Map && json['success'] == true && json['data'] is List) {
+            setState(() => transactionHistory = List<dynamic>.from(json['data']));
+          } else if (json is List) {
+            setState(() => transactionHistory = List<dynamic>.from(json));
+          } else {
+            setState(() => transactionHistory = []);
+          }
         }
       } else {
         debugPrint('txn history fetch failed: ${res.statusCode}');
@@ -196,12 +313,28 @@ class _StudentFeeScreenState extends State<StudentFeeScreen> with SingleTickerPr
             'totalVanFeeConcession': (r['TotalVanFeeConcession'] ?? 0).toDouble(),
           };
         }
-        setState(() => vanByHead = map);
+        if (mounted) setState(() => vanByHead = map);
       } else {
         debugPrint('vanfee fetch failed: ${res.statusCode}');
       }
     } catch (e) {
       debugPrint('fetchVanFeeByHead error: $e');
+    }
+  }
+
+  Future<void> handleStudentSwitch(String newAdmission) async {
+    final norm = normalizeAdmission(newAdmission);
+    if (norm == activeAdmission) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('activeStudentAdmission', norm);
+    if (mounted) {
+      setState(() {
+        activeAdmission = norm;
+      });
+    }
+    final token = await _getToken();
+    if (token != null && mounted) {
+      await _loadAllForAdmission(norm, token);
     }
   }
 
@@ -244,7 +377,7 @@ class _StudentFeeScreenState extends State<StudentFeeScreen> with SingleTickerPr
         if (itemCount == 0) return;
         _kpiPage = (_kpiPage + 1) % itemCount;
         controller.animateToPage(_kpiPage, duration: _kpiPageAnim, curve: Curves.easeInOut);
-        setState(() {});
+        if (mounted) setState(() {});
       } catch (e) {
         debugPrint('kpi page auto-scroll ignored: $e');
       }
@@ -491,54 +624,137 @@ class _StudentFeeScreenState extends State<StudentFeeScreen> with SingleTickerPr
     ];
   }
 
-  Widget _hero() {
-    final sd = studentDetails ?? {};
-    final totals = _calcTotals();
-    final vanDue = totals['vanDue'] ?? 0.0;
+Widget _hero() {
+  final sd = studentDetails ?? {};
+  final totals = _calcTotals();
+  final vanDue = totals['vanDue'] ?? 0.0;
+  final kpiItems = _kpiItemsForTotals(totals);
 
-    final kpiItems = _kpiItemsForTotals(totals);
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [Color(0xFF4F46E5), Color(0xFF06B6D4), Color(0xFF10B981)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-        borderRadius: BorderRadius.circular(16),
+  return Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      gradient: const LinearGradient(
+        colors: [Color(0xFF4F46E5), Color(0xFF06B6D4), Color(0xFF10B981)],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
       ),
-      child: Column(children: [
-        Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Welcome,', style: TextStyle(color: Colors.white.withOpacity(0.9))),
-              const SizedBox(height: 4),
-              Text(sd['name'] ?? 'Student', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 20), overflow: TextOverflow.ellipsis),
-              const SizedBox(height: 6),
-              Wrap(spacing: 8, runSpacing: 6, children: [
-                _softBadge('Adm No', sd['admissionNumber'] ?? '—'),
-                if (sd['class_name'] != null) _softBadge('Class', sd['class_name']),
-                if (sd['section_name'] != null) _softBadge('Section', sd['section_name']),
-                if (sd['concession'] != null && sd['concession']['name'] != null) _softBadge('Concession', sd['concession']['name']),
-              ]),
-            ]),
-          ),
-          Column(children: [
-            ElevatedButton.icon(
-              onPressed: () => setState(() => _tabController.index = 0),
-              icon: const Icon(Icons.grid_view),
-              label: const Text('Fee Details'),
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.black87),
+      borderRadius: BorderRadius.circular(16),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ---- Row: Name + Buttons ----
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Welcome,',
+                      style: TextStyle(color: Colors.white.withOpacity(0.9))),
+                  const SizedBox(height: 4),
+                  Text(sd['name'] ?? 'Student',
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 20),
+                      overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 6),
+                  Wrap(spacing: 8, runSpacing: 6, children: [
+                    _softBadge('Adm No', sd['admissionNumber'] ?? '—'),
+                    if (sd['class_name'] != null)
+                      _softBadge('Class', sd['class_name']),
+                    if (sd['section_name'] != null)
+                      _softBadge('Section', sd['section_name']),
+                    if (sd['concession'] != null &&
+                        sd['concession']['name'] != null)
+                      _softBadge('Concession', sd['concession']['name']),
+                  ]),
+                ],
+              ),
             ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: () => setState(() => _tabController.index = 1),
-              icon: const Icon(Icons.pie_chart),
-              label: const Text('Summary'),
-              style: OutlinedButton.styleFrom(foregroundColor: Colors.white),
-            )
-          ])
-        ]),
-        const SizedBox(height: 12),
+            Column(
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () => setState(() => _tabController.index = 0),
+                  icon: const Icon(Icons.grid_view),
+                  label: const Text('Fee Details'),
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.black87),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () => setState(() => _tabController.index = 1),
+                  icon: const Icon(Icons.pie_chart),
+                  label: const Text('Summary'),
+                  style: OutlinedButton.styleFrom(foregroundColor: Colors.white),
+                ),
+              ],
+            ),
+          ],
+        ),
 
-        // Auto-scrolling chip row (fixed height)
+        // ---- NEW: Full-width Student Switcher ----
+        if (canSeeStudentSwitcher && studentsList.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.18),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: studentsList.map((s) {
+                  final isActive =
+                      (s['admission_number']?.toString() == activeAdmission);
+                  final name = (s['isSelf'] ?? false)
+                      ? 'Me'
+                      : (s['name']?.toString() ?? 'Student');
+                  final cls = s['class']?['name']?.toString() ?? '';
+                  final sec = s['section']?['name']?.toString() ?? '';
+                  final label = cls.isNotEmpty
+                      ? '$name · $cls${sec.isNotEmpty ? '-$sec' : ''}'
+                      : name;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 10),
+                    child: ElevatedButton(
+                      onPressed: () => handleStudentSwitch(
+                          s['admission_number']?.toString() ?? ''),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isActive
+                            ? Colors.white
+                            : Colors.white.withOpacity(0.2),
+                        foregroundColor:
+                            isActive ? Colors.black87 : Colors.white,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
+                      ),
+                      child: Text(
+                        label,
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: isActive
+                                ? FontWeight.w700
+                                : FontWeight.normal),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        ],
+
+        const SizedBox(height: 14),
+        // ---- Auto-scrolling chips + KPI below (unchanged) ----
         SizedBox(
           height: 56,
           child: NotificationListener<ScrollNotification>(
@@ -548,15 +764,23 @@ class _StudentFeeScreenState extends State<StudentFeeScreen> with SingleTickerPr
               scrollDirection: Axis.horizontal,
               children: [
                 const SizedBox(width: 8),
-                _chipRowItem(Icons.place, 'Route', sd['transport']?['villages'] ?? '—', Colors.purple.shade100),
+                _chipRowItem(Icons.place, 'Route',
+                    sd['transport']?['villages'] ?? '—', Colors.purple.shade100),
                 const SizedBox(width: 8),
-                _chipRowItem(Icons.local_shipping, 'Transport Due', formatINR(totals['vanCost'] ?? 0), Colors.amber.shade100),
+                _chipRowItem(Icons.local_shipping, 'Transport Due',
+                    formatINR(totals['vanCost'] ?? 0), Colors.amber.shade100),
                 const SizedBox(width: 8),
-                _chipRowItem(Icons.account_balance_wallet, 'Van Received', formatINR(totals['vanReceived'] ?? 0), Colors.blue.shade100),
+                _chipRowItem(Icons.account_balance_wallet, 'Van Received',
+                    formatINR(totals['vanReceived'] ?? 0), Colors.blue.shade100),
                 const SizedBox(width: 8),
-                _chipRowItem(Icons.confirmation_num, 'Van Concession', formatINR(totals['vanConcession'] ?? 0), Colors.orange.shade100),
+                _chipRowItem(Icons.confirmation_num, 'Van Concession',
+                    formatINR(totals['vanConcession'] ?? 0),
+                    Colors.orange.shade100),
                 const SizedBox(width: 8),
-                _chipRowItem(Icons.money, 'Van Due', formatINR(vanDue), vanDue > 0 ? Colors.red.shade100 : Colors.green.shade100),
+                _chipRowItem(Icons.money, 'Van Due', formatINR(vanDue),
+                    vanDue > 0
+                        ? Colors.red.shade100
+                        : Colors.green.shade100),
                 const SizedBox(width: 8),
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 6),
@@ -564,7 +788,9 @@ class _StudentFeeScreenState extends State<StudentFeeScreen> with SingleTickerPr
                     onPressed: (vanDue > 0) ? handlePayVanFee : null,
                     icon: const Icon(Icons.credit_card),
                     label: const Text('Pay Van Fee'),
-                    style: ElevatedButton.styleFrom(backgroundColor: vanDue > 0 ? Colors.green : Colors.grey),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            vanDue > 0 ? Colors.green : Colors.grey),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -573,9 +799,9 @@ class _StudentFeeScreenState extends State<StudentFeeScreen> with SingleTickerPr
           ),
         ),
 
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
 
-        // KPI PageView: auto-paging with indicator dots
+        // KPI PageView (unchanged)
         SizedBox(
           height: 110,
           child: Column(
@@ -584,9 +810,7 @@ class _StudentFeeScreenState extends State<StudentFeeScreen> with SingleTickerPr
                 child: PageView.builder(
                   controller: _kpiPageController,
                   itemCount: kpiItems.length,
-                  onPageChanged: (p) => setState(() {
-                    _kpiPage = p;
-                  }),
+                  onPageChanged: (p) => setState(() => _kpiPage = p),
                   itemBuilder: (context, i) {
                     final it = kpiItems[i];
                     return Padding(
@@ -606,16 +830,22 @@ class _StudentFeeScreenState extends State<StudentFeeScreen> with SingleTickerPr
                     margin: const EdgeInsets.symmetric(horizontal: 4),
                     width: active ? 18 : 8,
                     height: 8,
-                    decoration: BoxDecoration(color: active ? Colors.white : Colors.white.withOpacity(0.4), borderRadius: BorderRadius.circular(8)),
+                    decoration: BoxDecoration(
+                        color: active
+                            ? Colors.white
+                            : Colors.white.withOpacity(0.4),
+                        borderRadius: BorderRadius.circular(8)),
                   );
                 }),
               )
             ],
           ),
         ),
-      ]),
-    );
-  }
+      ],
+    ),
+  );
+}
+
 
   Widget _softBadge(String label, dynamic value) {
     return Container(
@@ -691,142 +921,234 @@ class _StudentFeeScreenState extends State<StudentFeeScreen> with SingleTickerPr
       return const Center(child: Text('No fee details available.'));
     }
 
-    const double cardHeight = 180.0;
-    const double aspectRatio = 3.8;
-
-    return GridView.builder(
+    return ListView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: fees.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 1,
-        childAspectRatio: aspectRatio,
-        mainAxisSpacing: 12,
-      ),
       itemBuilder: (context, idx) {
         final fee = Map<String, dynamic>.from(fees[idx]);
         final t = getTransportBreakdown(fee);
         final academicDue = double.tryParse((fee['finalAmountDue'] ?? 0).toString()) ?? 0;
         final totalInclVan = academicDue + (t != null ? (t['pending'] ?? 0.0) : 0.0);
-        final effective = double.tryParse((fee['effectiveFeeDue'] ?? 0).toString()) ?? 0.0;
         final received = double.tryParse((fee['totalFeeReceived'] ?? 0).toString()) ?? 0.0;
         final concession = double.tryParse((fee['totalConcessionReceived'] ?? 0).toString()) ?? 0.0;
+        final effective = double.tryParse((fee['effectiveFeeDue'] ?? 0).toString()) ?? 0.0;
         final paidPct = effective > 0 ? ((received + concession) / effective) * 100 : 0;
         final vanPaidPct = (t != null && (t['cost'] ?? 0) > 0) ? ((t['received'] ?? 0) + (t['concession'] ?? 0)) / (t['cost'] ?? 1) * 100 : 0.0;
+        final isExpanded = _expandedFees.length > idx ? _expandedFees[idx] : false;
 
-        return SizedBox(
-          height: cardHeight,
-          child: Card(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: academicDue > 0 ? Colors.red.shade100 : Colors.green.shade100)),
-            elevation: 2,
-            child: Column(children: [
+        return Card(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(color: academicDue > 0 ? Colors.red.shade100 : Colors.green.shade100),
+          ),
+          elevation: 2,
+          child: Column(
+            children: [
               // Header
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                decoration: BoxDecoration(gradient: LinearGradient(colors: [Colors.indigo.shade50, Colors.cyan.shade50])),
-                child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                  Expanded(child: Text(fee['fee_heading'] ?? 'Fee', style: const TextStyle(fontWeight: FontWeight.w700), overflow: TextOverflow.ellipsis, maxLines: 2)),
-                  const SizedBox(width: 8),
-                  if (t != null)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                      decoration: BoxDecoration(color: (t['pending'] ?? 0) > 0 ? Colors.amber.shade100 : Colors.green.shade100, borderRadius: BorderRadius.circular(8)),
-                      child: Text((t['pending'] ?? 0) > 0 ? 'TR Pending: ${formatINR(t['pending'])}' : 'TR Clear', style: const TextStyle(fontWeight: FontWeight.w700)),
-                    )
-                  else
-                    Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6), decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(8)), child: const Text('No Transport')),
-                ]),
-              ),
-
-              // Body
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(12.0),
-                  child: Row(children: [
-                    // Left: academic info
-                    Expanded(
-                      flex: 2,
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        _smallRow('Original', formatINR(fee['originalFeeDue'] ?? 0)),
-                        _smallRow('Effective', formatINR(fee['effectiveFeeDue'] ?? 0)),
-                        _smallRow('Received', formatINR(fee['totalFeeReceived'] ?? 0)),
-                        _smallRow('Concession', formatINR(fee['totalConcessionReceived'] ?? 0)),
-                        const SizedBox(height: 6),
-                        SizedBox(
-                          height: 8,
-                          child: ClipRRect(borderRadius: BorderRadius.circular(4), child: LinearProgressIndicator(value: (paidPct.clamp(0, 100) / 100), minHeight: 8)),
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    if (_expandedFees.length > idx) {
+                      _expandedFees[idx] = !_expandedFees[idx];
+                    }
+                  });
+                },
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(colors: [Colors.indigo.shade50, Colors.cyan.shade50]),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          fee['fee_heading'] ?? 'Fee',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 2,
                         ),
-                        const SizedBox(height: 6),
-                        Text('Academic Paid ${paidPct.toStringAsFixed(1)}%', style: const TextStyle(fontSize: 12, color: Colors.black54)),
-                      ]),
-                    ),
-
-                    const SizedBox(width: 12),
-
-                    // Right: transport/totals
-                    Expanded(
-                      flex: 1,
-                      child: Column(mainAxisAlignment: MainAxisAlignment.spaceBetween, crossAxisAlignment: CrossAxisAlignment.end, children: [
-                        if (t != null)
-                          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                              decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), color: Colors.blue.shade50),
-                              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                const Icon(Icons.local_shipping, size: 14),
-                                const SizedBox(width: 6),
-                                const Text('Transport', style: TextStyle(fontWeight: FontWeight.w700)),
-                                const SizedBox(width: 8),
-                                Text(formatINR(t['pending'] ?? 0)),
-                              ]),
-                            ),
-                            const SizedBox(height: 8),
-                            _tinyRow('Due (Head)', formatINR(t['due'] ?? 0)),
-                            _tinyRow('Received (Head)', formatINR(t['received'] ?? 0)),
-                            _tinyRow('Concession (Head)', formatINR(t['concession'] ?? 0)),
-                            _tinyRow('Pending (Head)', formatINR(t['pending'] ?? 0), valueIsDanger: (t['pending'] ?? 0) > 0),
-                            const SizedBox(height: 6),
-                            if ((t['cost'] ?? 0) > 0)
-                              Column(children: [
-                                SizedBox(height: 8, child: ClipRRect(borderRadius: BorderRadius.circular(4), child: LinearProgressIndicator(value: (vanPaidPct.clamp(0, 100) / 100), minHeight: 8, color: Colors.lightBlue))),
-                                const SizedBox(height: 4),
-                                Text('Transport Paid ${vanPaidPct.toStringAsFixed(1)}%', style: const TextStyle(fontSize: 12, color: Colors.black54)),
-                              ]),
-                          ])
-                        else
-                          const SizedBox.shrink(),
-
-                        // Totals and action
-                        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                          Text('Academic Due', style: const TextStyle(fontWeight: FontWeight.w600)),
-                          Text(formatINR(academicDue), style: TextStyle(fontWeight: FontWeight.w800, color: academicDue > 0 ? Colors.red : Colors.green)),
-                          const SizedBox(height: 6),
-                          if (t != null)
-                            Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                              Text('Transport Pending', style: const TextStyle(fontWeight: FontWeight.w600)),
-                              Text(formatINR(t['pending'] ?? 0), style: TextStyle(fontWeight: FontWeight.w800, color: (t['pending'] ?? 0) > 0 ? Colors.red : Colors.green)),
-                              const SizedBox(height: 6),
-                              Text('Total Due (incl. Transport)', style: const TextStyle(fontWeight: FontWeight.w600)),
-                              Text(formatINR(totalInclVan), style: TextStyle(fontWeight: FontWeight.w800, color: totalInclVan > 0 ? Colors.red : Colors.green)),
-                            ]),
-                        ]),
-
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: (academicDue > 0 || (t != null && (t['pending'] ?? 0) > 0)) ? () => handlePayFee(fee) : null,
-                            child: Text((academicDue > 0) ? 'Pay' : (t != null && (t['pending'] ?? 0) > 0) ? 'Transport Pending' : 'Paid'),
-                            style: ElevatedButton.styleFrom(backgroundColor: (academicDue > 0) ? Colors.blue : Colors.green),
+                      ),
+                      const SizedBox(width: 8),
+                      if (t != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: (t['pending'] ?? 0) > 0 ? Colors.amber.shade100 : Colors.green.shade100,
+                            borderRadius: BorderRadius.circular(8),
                           ),
+                          child: Text(
+                            (t['pending'] ?? 0) > 0 ? 'TR Pending: ${formatINR(t['pending'])}' : 'TR Clear',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        )
+                      else
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade200,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text('No Transport'),
                         ),
-                      ]),
-                    ),
-                  ]),
+                      Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
+                    ],
+                  ),
                 ),
               ),
-            ]),
+              if (isExpanded)
+                Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Academic details
+                      _smallRow('Received', formatINR(fee['totalFeeReceived'] ?? 0)),
+                      _smallRow('Concession', formatINR(fee['totalConcessionReceived'] ?? 0)),
+                      const SizedBox(height: 6),
+                      SizedBox(
+                        height: 8,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            value: (paidPct.clamp(0, 100) / 100),
+                            minHeight: 8,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Academic Paid ${paidPct.toStringAsFixed(1)}%',
+                        style: const TextStyle(fontSize: 12, color: Colors.black54),
+                      ),
+                      if (t != null) ...[
+                        const SizedBox(height: 12),
+                        // Transport header
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            color: Colors.blue.shade50,
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.local_shipping, size: 14),
+                                  const SizedBox(width: 6),
+                                  const Text(
+                                    'Transport',
+                                    style: TextStyle(fontWeight: FontWeight.w700),
+                                  ),
+                                ],
+                              ),
+                              Text(formatINR(t['pending'] ?? 0)),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        // Transport tiny rows
+                        _tinyRow('Due (Head)', formatINR(t['due'] ?? 0)),
+                        _tinyRow('Received (Head)', formatINR(t['received'] ?? 0)),
+                        _tinyRow('Concession (Head)', formatINR(t['concession'] ?? 0)),
+                        _tinyRow(
+                          'Pending (Head)',
+                          formatINR(t['pending'] ?? 0),
+                          valueIsDanger: (t['pending'] ?? 0) > 0,
+                        ),
+                        if ((t['cost'] ?? 0) > 0) ...[
+                          const SizedBox(height: 6),
+                          SizedBox(
+                            height: 8,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: LinearProgressIndicator(
+                                value: (vanPaidPct.clamp(0, 100) / 100),
+                                minHeight: 8,
+                                color: Colors.lightBlue,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Transport Paid ${vanPaidPct.toStringAsFixed(1)}%',
+                            style: const TextStyle(fontSize: 12, color: Colors.black54),
+                          ),
+                        ],
+                      ],
+                      const SizedBox(height: 12),
+                      // Totals aligned to the right
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              'Academic Due',
+                              style: const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            Text(
+                              formatINR(academicDue),
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: academicDue > 0 ? Colors.red : Colors.green,
+                              ),
+                            ),
+                            if (t != null) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                'Transport Pending',
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              Text(
+                                formatINR(t['pending'] ?? 0),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  color: (t['pending'] ?? 0) > 0 ? Colors.red : Colors.green,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                            ],
+                            Text(
+                              'Total Due (incl. Transport)',
+                              style: const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            Text(
+                              formatINR(totalInclVan),
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: totalInclVan > 0 ? Colors.red : Colors.green,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: (academicDue > 0 || (t != null && (t['pending'] ?? 0) > 0))
+                              ? () => handlePayFee(fee)
+                              : null,
+                          child: Text(
+                            (academicDue > 0)
+                                ? 'Pay'
+                                : (t != null && (t['pending'] ?? 0) > 0)
+                                    ? 'Transport Pending'
+                                    : 'Paid',
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: (academicDue > 0) ? Colors.blue : Colors.green,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
           ),
         );
       },
@@ -836,22 +1158,57 @@ class _StudentFeeScreenState extends State<StudentFeeScreen> with SingleTickerPr
   Widget _smallRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Flexible(child: Text(label, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)),
-        const SizedBox(width: 8),
-        Flexible(child: Text(value, style: const TextStyle(fontWeight: FontWeight.w700), overflow: TextOverflow.ellipsis, textAlign: TextAlign.right)),
-      ]),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Flexible(
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 13),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              value,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _tinyRow(String label, String value, {bool valueIsDanger = false}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Flexible(child: Text(label, style: const TextStyle(fontSize: 12, color: Colors.black54), overflow: TextOverflow.ellipsis)),
-        const SizedBox(width: 8),
-        Flexible(child: Text(value, style: TextStyle(fontWeight: FontWeight.w700, color: valueIsDanger ? Colors.red : Colors.black), overflow: TextOverflow.ellipsis, textAlign: TextAlign.right)),
-      ]),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Flexible(
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 12, color: Colors.black54),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: valueIsDanger ? Colors.red : Colors.black,
+              ),
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -920,7 +1277,7 @@ class _StudentFeeScreenState extends State<StudentFeeScreen> with SingleTickerPr
       appBar: AppBar(title: const Text('Fees'), backgroundColor: const Color(0xFF6C63FF)),
       backgroundColor: const Color(0xFFF6F9FF),
       body: RefreshIndicator(
-        onRefresh: () async => await _loadAll(),
+        onRefresh: () async => await _loadFamilyAndActive(),
         color: const Color(0xFF6C63FF),
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),

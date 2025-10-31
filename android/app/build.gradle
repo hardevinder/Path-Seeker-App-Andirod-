@@ -1,18 +1,30 @@
+// android/app/build.gradle (FULL – updated)
+def keystorePropertiesFile = rootProject.file("key.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 apply plugin: 'com.google.gms.google-services'
 apply plugin: 'dev.flutter.flutter-gradle-plugin'
 
 android {
-    namespace "com.example.studentapp_new"
-    compileSdkVersion 35
+    namespace "com.pathseeker.international"
+
+    // modern syntax
+    compileSdk 35
 
     defaultConfig {
-        applicationId "com.example.studentapp_new"
-        minSdkVersion 24
-        targetSdkVersion 35
-        versionCode 1
-        versionName "1.0"
+        applicationId "com.pathseeker.international"
+        minSdk 24
+        targetSdk 35
+        versionCode 14
+        versionName "1.0.3"
+
+        // if you ever need multidex:
+        // multiDexEnabled true
     }
 
     compileOptions {
@@ -21,22 +33,82 @@ android {
         coreLibraryDesugaringEnabled true
     }
 
-    // ✅ MATCHING Kotlin JVM target
+    // Some plugins may read kotlinOptions here; keep for compatibility
     kotlinOptions {
         jvmTarget = "17"
     }
 
-    buildTypes {
+    // -------- signing config (uses android/key.properties) --------
+    signingConfigs {
         release {
-            signingConfig signingConfigs.debug
+            if (keystorePropertiesFile.exists()) {
+                def storeFilePath = keystoreProperties['storeFile']
+                if (storeFilePath != null && storeFilePath.toString().trim()) {
+                    storeFile file(storeFilePath)
+                } else {
+                    throw new GradleException("storeFile missing in key.properties for release signing. Add 'storeFile' with absolute path.")
+                }
+
+                if (!keystoreProperties['storePassword'] || !keystoreProperties['keyPassword'] || !keystoreProperties['keyAlias']) {
+                    throw new GradleException("key.properties is missing required keys. Must contain storePassword, keyPassword, and keyAlias.")
+                }
+
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            } else {
+                throw new GradleException("key.properties not found — create android/key.properties with signing info (storeFile, storePassword, keyAlias, keyPassword).")
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            // keep minify disabled while testing on Android 15/16
             minifyEnabled false
             shrinkResources false
+        }
+        release {
+            signingConfig signingConfigs.release
+
+            // Temporary: keep minify disabled while verifying Android 15/16 compatibility.
+            // After verification, set minifyEnabled true and provide proguard rules as needed.
+            minifyEnabled false
+            shrinkResources false
+
+            // keep proguard files referenced (they won't be used while minifyEnabled=false)
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+
+            // Optional: enable these if you want verbose build-only checks
+            // debuggable false
+            // zipAlignEnabled true
+        }
+    }
+
+    // Optional: packaging tweaks to avoid accidental resource conflicts
+    packagingOptions {
+        resources {
+            excludes += [
+                "META-INF/DEPENDENCIES",
+                "META-INF/NOTICE",
+                "META-INF/NOTICE.txt",
+                "META-INF/LICENSE",
+                "META-INF/LICENSE.txt"
+            ]
         }
     }
 }
 
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
+    implementation 'androidx.core:core-ktx:1.10.1'      // handy Kotlin extensions
+    implementation 'com.google.android.material:material:1.9.0' // material widgets (optional)
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'
+}
+
+// Ensure Kotlin compile task uses JVM 17 reliably
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+    kotlinOptions {
+        jvmTarget = "17"
+    }
 }

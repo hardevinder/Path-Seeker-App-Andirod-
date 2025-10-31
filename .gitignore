@@ -52,3 +52,5 @@ app.*.map.json
 /windows/runner/Debug/
 *.pdb
 *.exe
+/android/key.properties
+/release-keystore.jks

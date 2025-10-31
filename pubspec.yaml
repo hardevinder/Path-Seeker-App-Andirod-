@@ -17,6 +17,7 @@ dependencies:
   fl_chart: ^0.64.0
   pie_chart: ^5.3.2
   oktoast: ^3.3.1
+  provider: ^6.1.2
 
   # -------------------------
   # 🔥 Firebase Integration
@@ -26,6 +27,7 @@ dependencies:
   cloud_firestore: ^4.13.0
   firebase_messaging: ^14.7.4
   google_sign_in: ^6.2.1
+  flutter_local_notifications: ^17.2.2
 
   # -------------------------
   # 🌐 Networking & Storage
@@ -50,12 +52,27 @@ dependencies:
   intl: ^0.19.0
   table_calendar: ^3.0.9
   http_parser: ^4.0.0
+  file_selector: ^1.0.3       # ✅ Replaced file_picker (safe with Firebase 2.x)
 
   # -------------------------
-  # 🆕 Added for StudentCirculars / Chat updates
+  # 🆕 Circulars / Chat / Teacher Updates & Realtime
   # -------------------------
   cached_network_image: ^3.2.4
   socket_io_client: ^2.0.0
+
+  # -------------------------
+  # 🧑‍🏫 Teacher & Attendance
+  # -------------------------
+  pull_to_refresh: ^2.0.0
+  connectivity_plus: ^6.0.3
+  animations: ^2.0.11
+
+  # -------------------------
+  # ✨ New / Helpful Packages for Updated Screens
+  # -------------------------
+  dropdown_search: ^5.0.3   # searchable dropdown
+  share_plus: ^10.0.0       # share files or text
+  csv: ^5.0.0               # export CSV
 
 dev_dependencies:
   flutter_test:
@@ -68,13 +85,10 @@ flutter:
 
   assets:
     - assets/
-    # Example:
-    # - assets/images/
-    # - assets/icons/
 
 flutter_icons:
   android: true
   ios: true
-  image_path: "assets/icon/app_icon.png"
+  image_path: "assets/icon/icon.png"
   adaptive_icon_background: "#FFFFFF"
-  adaptive_icon_foreground: "assets/icon/app_icon.png"
+  adaptive_icon_foreground: "assets/icon/icon.png"

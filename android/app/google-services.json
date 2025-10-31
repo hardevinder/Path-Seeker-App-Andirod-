@@ -31,10 +31,10 @@
               "client_type": 3
             },
             {
-              "client_id": "667315534601-fk2skpfe5s2j58eq026bvffm8oeg1juk.apps.googleusercontent.com",
+              "client_id": "667315534601-dnp8i19on8kovjkevskhvths1icc5l4t.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "com.example.studentapp"
+                "bundle_id": "com.example.teacherapp"
               }
             }
           ]
@@ -75,10 +75,90 @@
               "client_type": 3
             },
             {
-              "client_id": "667315534601-fk2skpfe5s2j58eq026bvffm8oeg1juk.apps.googleusercontent.com",
+              "client_id": "667315534601-dnp8i19on8kovjkevskhvths1icc5l4t.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "com.example.studentapp"
+                "bundle_id": "com.example.teacherapp"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:667315534601:android:81a8577618f2f6e67ab1d8",
+        "android_client_info": {
+          "package_name": "com.example.teacherapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "667315534601-sijubrc7jukbiqd3pnh3clll8inelffv.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD6h5jlZ1DJbGulpsxFY9JDLOfsBsl8XJU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "667315534601-sijubrc7jukbiqd3pnh3clll8inelffv.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "667315534601-dnp8i19on8kovjkevskhvths1icc5l4t.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.teacherapp"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:667315534601:android:062f03b8f2874bcd7ab1d8",
+        "android_client_info": {
+          "package_name": "com.pathseeker.international"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "667315534601-rgpr0bcha3dundg7khqr3t82u9r7v5ih.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.pathseeker.international",
+            "certificate_hash": "83c0d0742ef2c01f9e6873f6af39eeeec95d86c2"
+          }
+        },
+        {
+          "client_id": "667315534601-sijubrc7jukbiqd3pnh3clll8inelffv.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD6h5jlZ1DJbGulpsxFY9JDLOfsBsl8XJU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "667315534601-sijubrc7jukbiqd3pnh3clll8inelffv.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "667315534601-dnp8i19on8kovjkevskhvths1icc5l4t.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.teacherapp"
               }
             }
           ]
@@ -111,10 +191,10 @@
               "client_type": 3
             },
             {
-              "client_id": "667315534601-fk2skpfe5s2j58eq026bvffm8oeg1juk.apps.googleusercontent.com",
+              "client_id": "667315534601-dnp8i19on8kovjkevskhvths1icc5l4t.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "com.example.studentapp"
+                "bundle_id": "com.example.teacherapp"
               }
             }
           ]
@@ -147,10 +227,10 @@
               "client_type": 3
             },
             {
-              "client_id": "667315534601-fk2skpfe5s2j58eq026bvffm8oeg1juk.apps.googleusercontent.com",
+              "client_id": "667315534601-dnp8i19on8kovjkevskhvths1icc5l4t.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "com.example.studentapp"
+                "bundle_id": "com.example.teacherapp"
               }
             }
           ]

@@ -1,4 +1,4 @@
-// lib/screens/student_attendance_screen.dart
+// File: lib/screens/student_attendance_screen.dart
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -7,8 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:fl_chart/fl_chart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Replace with your API base URL or provide via constants/config
-const String API_URL = String.fromEnvironment('API_URL', defaultValue: '');
+import '../constants/constants.dart'; // <- uses same baseUrl as dashboard
 
 class StudentAttendanceScreen extends StatefulWidget {
   const StudentAttendanceScreen({super.key});
@@ -17,7 +16,7 @@ class StudentAttendanceScreen extends StatefulWidget {
   State<StudentAttendanceScreen> createState() => _StudentAttendanceScreenState();
 }
 
-class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
+class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with WidgetsBindingObserver {
   DateTime currentMonth = DateTime.now();
   List<Map<String, dynamic>> attendanceRecords = [];
   List<Map<String, dynamic>> holidaysRaw = [];
@@ -25,6 +24,10 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
   int? studentClassId;
   String? selectedDate; // yyyy-MM-dd
   bool loading = true;
+
+  // --- Student switcher (Option B: full-width bar below hero)
+  List<Map<String, dynamic>> studentList = [];
+  Map<String, dynamic>? selectedStudent;
 
   // title auto-scroll
   Timer? _titleTimer;
@@ -38,19 +41,27 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
   final Duration _kpiInterval = const Duration(seconds: 4);
   final Duration _kpiAnim = const Duration(milliseconds: 500);
 
+  // Auto-refresh (polling)
+  Timer? _autoRefreshTimer;
+  final Duration _refreshInterval = const Duration(seconds: 30);
+  bool _refreshInProgress = false;
+
   @override
   void initState() {
     super.initState();
-    // start data load immediately
-    _loadInitial();
+    WidgetsBinding.instance.addObserver(this);
 
     // safe init: create controller now
     _kpiPageController = PageController(viewportFraction: 0.68);
+
+    // Load students first, then data
+    _loadStudentsThenInitial();
 
     // start timers after first frame to avoid build-time race
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _startTitleTimer();
       _startKpiTimer();
+      _startAutoRefresh();
     });
   }
 
@@ -59,27 +70,19 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
     _titleTimer?.cancel();
     _kpiTimer?.cancel();
     _kpiPageController?.dispose();
+    _stopAutoRefresh();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
-  void _startTitleTimer() {
-    _titleTimer?.cancel();
-    _titleTimer = Timer.periodic(_titleInterval, (_) {
-      setState(() {
-        _titleIndex = (_titleIndex + 1) % _currentTitles().length;
-      });
-    });
-  }
-
-  void _startKpiTimer() {
-    _kpiTimer?.cancel();
-    _kpiTimer = Timer.periodic(_kpiInterval, (_) {
-      final count = _kpiItems().length;
-      if (count == 0 || _kpiPageController == null || !_kpiPageController!.hasClients) return;
-      _kpiPage = (_kpiPage + 1) % count;
-      _kpiPageController!.animateToPage(_kpiPage, duration: _kpiAnim, curve: Curves.easeInOut);
-      setState(() {});
-    });
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // pause timers when app not active
+    if (state == AppLifecycleState.resumed) {
+      _startAutoRefresh();
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive || state == AppLifecycleState.detached) {
+      _stopAutoRefresh();
+    }
   }
 
   Future<String?> _getToken() async {
@@ -87,6 +90,60 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
     return prefs.getString('authToken') ?? prefs.getString('token');
   }
 
+  // ---- STUDENT SWITCHER ----
+  Future<void> _loadStudentsThenInitial() async {
+    setState(() => loading = true);
+    await _fetchStudents();
+    await _loadInitial(); // will use selectedStudent if present else /me
+    setState(() => loading = false);
+  }
+
+  Future<void> _fetchStudents() async {
+    final token = await _getToken();
+    if (token == null || baseUrl.isEmpty) return;
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/incharges/students'), headers: {'Authorization': 'Bearer $token'});
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final list = List<Map<String, dynamic>>.from(data is Map && data['students'] is List ? data['students'] : []);
+        // Choose default: if user is parent/incharge -> pick first; if empty, keep null (self mode)
+        setState(() {
+          studentList = list;
+          selectedStudent ??= list.isNotEmpty ? list.first : null;
+        });
+      } else {
+        debugPrint('students fetch ${res.statusCode}: ${res.body}');
+      }
+    } catch (e) {
+      debugPrint('students fetch error: $e');
+    }
+  }
+
+  Future<void> _onChangeStudent(Map<String, dynamic>? s) async {
+    setState(() {
+      selectedStudent = s;
+      // when switching student, also reset class id and name from student object directly (if available)
+      studentClassId = _extractClassIdFromStudent(s) ?? studentClassId;
+      studentName = (s?['name'] ?? s?['student_name'] ?? s?['studentName'])?.toString();
+    });
+    await _loadInitial();
+  }
+
+  int? _extractClassIdFromStudent(Map<String, dynamic>? s) {
+    if (s == null) return null;
+    final v = s['class'] is Map ? s['class']['id'] : (s['class_id'] ?? s['classId'] ?? s['classID']);
+    if (v is int) return v;
+    if (v is String) return int.tryParse(v);
+    return null;
+  }
+
+  String? _extractStudentId(Map<String, dynamic>? s) {
+    if (s == null) return null;
+    final v = s['id'] ?? s['student_id'] ?? s['studentId'];
+    return v?.toString();
+  }
+
+  // ----------------- Initial load -----------------
   Future<void> _loadInitial() async {
     setState(() => loading = true);
     await _fetchAttendance();
@@ -95,40 +152,128 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
     setState(() => loading = false);
   }
 
+  // ----------------- Networking & normalization -----------------
   Future<void> _fetchAttendance() async {
     final token = await _getToken();
-    if (token == null || API_URL.isEmpty) return;
+    if (token == null || baseUrl.isEmpty) return;
+    if (_refreshInProgress) return;
+
+    _refreshInProgress = true;
     try {
-      final res = await http.get(Uri.parse('$API_URL/attendance/student/me'), headers: {'Authorization': 'Bearer $token'});
+      http.Response res;
+      final selId = _extractStudentId(selectedStudent);
+      if (selId != null && selId.isNotEmpty) {
+        // selected student mode
+        res = await http.get(Uri.parse('$baseUrl/attendance/student/$selId'), headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'});
+      } else {
+        // fallback: self mode (student logged in)
+        res = await http.get(Uri.parse('$baseUrl/attendance/student/me'), headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'});
+      }
+
       if (res.statusCode == 200) {
         final body = jsonDecode(res.body);
-        final list = (body is List) ? List<Map<String, dynamic>>.from(body) : <Map<String, dynamic>>[];
+        final rawList = (body is List)
+            ? body
+            : (body is Map && body['data'] is List)
+                ? body['data']
+                : <dynamic>[];
+        final list = List<Map<String, dynamic>>.from(rawList.map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}));
+
+        // Normalize date field for easier lookups later
+        for (final r in list) {
+          final normalized = _dateFromAny(r['date']);
+          if (normalized != null) {
+            r['__date_normalized'] = normalized; // yyyy-MM-dd
+          } else {
+            final d2 = r['attendanceDate'] ?? r['dateString'] ?? r['createdAt'];
+            final n2 = _dateFromAny(d2);
+            if (n2 != null) r['__date_normalized'] = n2;
+          }
+        }
+
+        // Derive student meta from selectedStudent first, else fallback from record
+        String? nameLocal = (selectedStudent?['name'] ?? selectedStudent?['student_name'] ?? selectedStudent?['studentName'])?.toString();
+        int? classLocal = _extractClassIdFromStudent(selectedStudent);
+
+        if (list.isNotEmpty && (nameLocal == null || classLocal == null)) {
+          final first = list.first;
+          final student = first['student'] is Map ? Map<String, dynamic>.from(first['student']) : <String, dynamic>{};
+          nameLocal ??= student['name'] ?? first['studentName'] ?? first['student_name'];
+          final classVal = (student['class_id'] ?? student['classId'] ?? first['class_id'] ?? first['classId']);
+          if (classLocal == null) {
+            if (classVal is int) classLocal = classVal;
+            else if (classVal is String) classLocal = int.tryParse(classVal);
+          }
+        }
+
         setState(() {
           attendanceRecords = list;
-          if (list.isNotEmpty) {
-            studentName = list.first['student']?['name'] ?? list.first['studentName'] ?? studentName;
-            studentClassId = list.first['student']?['class_id'] ?? list.first['student']?['classId'] ?? studentClassId;
-          }
+          studentName = nameLocal ?? studentName;
+          if (classLocal != null) studentClassId = classLocal;
         });
+      } else {
+        debugPrint('attendance fetch returned ${res.statusCode}: ${res.body}');
       }
-    } catch (e) {
-      debugPrint('attendance fetch error: $e');
+    } catch (e, st) {
+      debugPrint('attendance fetch error: $e\n$st');
+    } finally {
+      _refreshInProgress = false;
     }
   }
 
   Future<void> _fetchHolidays() async {
     final token = await _getToken();
-    if (token == null || API_URL.isEmpty) return;
+    if (token == null || baseUrl.isEmpty) return;
     try {
-      final res = await http.get(Uri.parse('$API_URL/holidays'), headers: {'Authorization': 'Bearer $token'});
+      final res = await http.get(Uri.parse('$baseUrl/holidays'), headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'});
       if (res.statusCode == 200) {
         final body = jsonDecode(res.body);
         final list = (body is List) ? List<Map<String, dynamic>>.from(body) : <Map<String, dynamic>>[];
         setState(() => holidaysRaw = list);
+      } else {
+        debugPrint('holidays fetch ${res.statusCode}: ${res.body}');
       }
     } catch (e) {
       debugPrint('holidays fetch error: $e');
     }
+  }
+
+  void _startAutoRefresh() {
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = Timer.periodic(_refreshInterval, (_) async {
+      if (!mounted) return;
+      // avoid overlapping fetches
+      if (_refreshInProgress) return;
+      await _fetchAttendance();
+      await _fetchHolidays();
+      // keep selectedDate validity in sync
+      setState(() {});
+    });
+  }
+
+  void _stopAutoRefresh() {
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = null;
+  }
+
+  // ----------------- Helpers & normalization -----------------
+  String? _dateFromAny(dynamic d) {
+    if (d == null) return null;
+    try {
+      if (d is String) {
+        // try ISO parse first
+        final parsed = DateTime.tryParse(d);
+        if (parsed != null) return DateFormat('yyyy-MM-dd').format(parsed);
+        // maybe epoch in string
+        final n = int.tryParse(d);
+        if (n != null) return DateFormat('yyyy-MM-dd').format(DateTime.fromMillisecondsSinceEpoch(n));
+      } else if (d is int) {
+        return DateFormat('yyyy-MM-dd').format(DateTime.fromMillisecondsSinceEpoch(d));
+      } else if (d is DateTime) {
+        return DateFormat('yyyy-MM-dd').format(d);
+      }
+    } catch (_) {}
+    return null;
   }
 
   Map<String, Map<String, dynamic>> get holidaysMap {
@@ -144,23 +289,6 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
     return idx;
   }
 
-  String? _dateFromAny(dynamic d) {
-    if (d == null) return null;
-    try {
-      if (d is String) {
-        final parsed = DateTime.tryParse(d);
-        if (parsed != null) return DateFormat('yyyy-MM-dd').format(parsed);
-        final n = int.tryParse(d);
-        if (n != null) return DateFormat('yyyy-MM-dd').format(DateTime.fromMillisecondsSinceEpoch(n));
-      } else if (d is int) {
-        return DateFormat('yyyy-MM-dd').format(DateTime.fromMillisecondsSinceEpoch(d));
-      } else if (d is DateTime) {
-        return DateFormat('yyyy-MM-dd').format(d);
-      }
-    } catch (_) {}
-    return null;
-  }
-
   List<DateTime?> get calendarCells {
     final startOfMonth = DateTime(currentMonth.year, currentMonth.month, 1);
     final endOfMonth = DateTime(currentMonth.year, currentMonth.month + 1, 0);
@@ -174,7 +302,15 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
 
   Map<String, dynamic>? _attendanceForDate(String dateStr) {
     try {
-      final found = attendanceRecords.firstWhere((r) => (r['date']?.toString() ?? '') == dateStr, orElse: () => <String, dynamic>{});
+      final found = attendanceRecords.firstWhere((r) {
+        final n = r['__date_normalized']?.toString();
+        if (n != null && n == dateStr) return true;
+        final raw = r['date']?.toString() ?? '';
+        final parsed = _dateFromAny(raw);
+        if (parsed != null && parsed == dateStr) return true;
+        if (raw.startsWith(dateStr)) return true; // handles ISO datetimes
+        return false;
+      }, orElse: () => <String, dynamic>{});
       return found.isEmpty ? null : found;
     } catch (_) {
       return null;
@@ -199,14 +335,14 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
   int _countForMonth(String status) {
     final m = DateFormat('yyyy-MM').format(currentMonth);
     return attendanceRecords.where((r) {
-      final d = r['date']?.toString();
+      final d = (r['__date_normalized'] ?? r['date'])?.toString();
       return d != null && d.startsWith(m) && (r['status'] ?? '').toString().toLowerCase() == status;
     }).length;
   }
 
   int _totalForMonth() {
     final m = DateFormat('yyyy-MM').format(currentMonth);
-    return attendanceRecords.where((r) => (r['date']?.toString() ?? '').startsWith(m)).length;
+    return attendanceRecords.where((r) => ((r['__date_normalized'] ?? r['date'])?.toString() ?? '').startsWith(m)).length;
   }
 
   Map<String, int> _monthStats() {
@@ -270,7 +406,7 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
                 const SizedBox(width: 8),
                 DropdownButton<int>(
                   value: year,
-                  items: List.generate(6, (i) => year - 3 + i).map((y) => DropdownMenuItem(value: y, child: Text('$y'))).toList(),
+                  items: List.generate(25, (i) => year - 12 + i).map((y) => DropdownMenuItem(value: y, child: Text('$y'))).toList(),
                   onChanged: (v) {
                     if (v != null) setSt(() => year = v);
                   },
@@ -295,11 +431,32 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
     final List<String> list = [];
     list.add('Attendance Calendar');
     list.add('% Presence: $percent%');
+    if (studentName != null && studentName!.isNotEmpty) list.add(studentName!);
     if (next != null) {
       final d = DateFormat('dd MMM').format(DateTime.parse(next['date']));
       list.add('Next holiday: $d');
     }
     return list;
+  }
+
+  void _startTitleTimer() {
+    _titleTimer?.cancel();
+    _titleTimer = Timer.periodic(_titleInterval, (_) {
+      setState(() {
+        _titleIndex = (_titleIndex + 1) % _currentTitles().length;
+      });
+    });
+  }
+
+  void _startKpiTimer() {
+    _kpiTimer?.cancel();
+    _kpiTimer = Timer.periodic(_kpiInterval, (_) {
+      final count = _kpiItems().length;
+      if (count == 0 || _kpiPageController == null || !_kpiPageController!.hasClients) return;
+      _kpiPage = (_kpiPage + 1) % count;
+      _kpiPageController!.animateToPage(_kpiPage, duration: _kpiAnim, curve: Curves.easeInOut);
+      setState(() {});
+    });
   }
 
   // ---------------------------
@@ -313,7 +470,7 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
       width: double.infinity,
       decoration: BoxDecoration(
         gradient: const LinearGradient(colors: [Color(0xFF7B2FF7), Color(0xFFF107A3)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(18)),
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 18, offset: const Offset(0, 8))],
       ),
       padding: const EdgeInsets.all(18),
@@ -376,6 +533,32 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
             ],
           )
         ],
+      ),
+    );
+  }
+
+  // --- Student switcher bar (Option B)
+  Widget _studentSwitcherBar() {
+    if (studentList.isEmpty) return const SizedBox.shrink();
+    return Container(
+      width: double.infinity,
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<Map<String, dynamic>>(
+          value: selectedStudent,
+          isExpanded: true,
+          icon: const Icon(Icons.arrow_drop_down),
+          onChanged: (v) => _onChangeStudent(v),
+          items: studentList.map((s) {
+            final name = s['name'] ?? s['student_name'] ?? s['studentName'] ?? 'Student';
+            final cls = s['class']?['name'] ?? s['class_name'] ?? s['className'] ?? '';
+            return DropdownMenuItem<Map<String, dynamic>>(
+              value: s,
+              child: Text('$name${cls.isNotEmpty ? ' ($cls)' : ''}', style: const TextStyle(fontWeight: FontWeight.w600)),
+            );
+          }).toList(),
+        ),
       ),
     );
   }
@@ -543,7 +726,6 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          // if you want a subtle outline for not-marked show a small ring instead
                           Container(
                             width: 10,
                             height: 10,
@@ -599,7 +781,6 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
     final leave = stats['leave'] as int;
     final total = stats['total'] as int;
 
-    // If there's no data to plot, show placeholder instead of an empty pie chart
     if (total == 0) {
       return Container(
         padding: const EdgeInsets.all(16),
@@ -619,7 +800,6 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
       );
     }
 
-    // else show pie chart
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8)]),
@@ -633,9 +813,9 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
               sectionsSpace: 2,
               centerSpaceRadius: 30,
               sections: [
-                PieChartSectionData(value: present.toDouble(), color: Colors.green, title: '${present}', titleStyle: const TextStyle(color: Colors.white)),
-                PieChartSectionData(value: absent.toDouble(), color: Colors.red, title: '${absent}', titleStyle: const TextStyle(color: Colors.white)),
-                PieChartSectionData(value: leave.toDouble(), color: Colors.amber, title: '${leave}', titleStyle: const TextStyle(color: Colors.white)),
+                PieChartSectionData(value: present.toDouble(), color: Colors.green, title: '$present', titleStyle: const TextStyle(color: Colors.white)),
+                PieChartSectionData(value: absent.toDouble(), color: Colors.red, title: '$absent', titleStyle: const TextStyle(color: Colors.white)),
+                PieChartSectionData(value: leave.toDouble(), color: Colors.amber, title: '$leave', titleStyle: const TextStyle(color: Colors.white)),
               ],
             ),
           ),
@@ -683,12 +863,10 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
           final d = entry.key;
           final rows = List<Map<String, dynamic>>.from(entry.value['rows'] as List);
           final descs = rows.map((r) => (r['description'] ?? '').toString()).where((s) => s.isNotEmpty).toSet().join(' • ');
-          final creators = rows.map((r) => r['creator']?['name'] ?? r['creator']?['email']).where((s) => s != null).toSet().join(', ');
           return ListTile(
             title: Text(DateFormat('EEE, dd MMM').format(DateTime.parse(d))),
             subtitle: Text(descs.isNotEmpty ? descs : 'Holiday'),
             trailing: const Chip(label: Text('Holiday')),
-            isThreeLine: creators.isNotEmpty,
             dense: true,
           );
         }).toList(),
@@ -713,53 +891,65 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
         elevation: 0,
       ),
       backgroundColor: const Color(0xFFF6F9FF),
-      body: RefreshIndicator(
-        onRefresh: _loadInitial,
-        color: const Color(0xFF6C63FF),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _hero(), // title (auto-scroll) + month box on next line + legend
-              const SizedBox(height: 16),
-              _kpiPager(), // single KPI tile visible at a time with auto-scroll (narrow)
-              const SizedBox(height: 18),
-              LayoutBuilder(builder: (context, constraints) {
-                final wide = constraints.maxWidth > 900;
-                return wide
-                    ? Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Expanded(
-                          flex: 2,
-                          child: Column(children: [
-                            Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8)]),
-                                child: _calendarGrid()),
-                            const SizedBox(height: 12),
-                            _monthlyHolidayList(),
-                          ]),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(flex: 1, child: _rightPanel()),
-                      ])
-                    : Column(children: [
-                        Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8)]),
-                            child: _calendarGrid()),
-                        const SizedBox(height: 12),
-                        _rightPanel(),
-                        const SizedBox(height: 12),
-                        _monthlyHolidayList(),
-                      ]);
-              }),
-              const SizedBox(height: 30),
-            ],
-          ),
-        ),
-      ),
+      body: loading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _loadInitial,
+              color: const Color(0xFF6C63FF),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.only(bottom: 30),
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _hero(), // title + month picker + legend
+                    _studentSwitcherBar(), // <-- Option B full-width white bar
+                    const SizedBox(height: 16),
+
+                    // KPI pager
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: _kpiPager(),
+                    ),
+                    const SizedBox(height: 18),
+
+                    // Main two-column layout (responsive)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: LayoutBuilder(builder: (context, constraints) {
+                        final wide = constraints.maxWidth > 900;
+                        return wide
+                            ? Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                Expanded(
+                                  flex: 2,
+                                  child: Column(children: [
+                                    Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8)]),
+                                        child: _calendarGrid()),
+                                    const SizedBox(height: 12),
+                                    _monthlyHolidayList(),
+                                  ]),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(flex: 1, child: _rightPanel()),
+                              ])
+                            : Column(children: [
+                                Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8)]),
+                                    child: _calendarGrid()),
+                                const SizedBox(height: 12),
+                                _rightPanel(),
+                                const SizedBox(height: 12),
+                                _monthlyHolidayList(),
+                              ]);
+                      }),
+                    ),
+                  ],
+                ),
+              ),
+            ),
     );
   }
 }
