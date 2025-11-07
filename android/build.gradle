@@ -1,16 +1,20 @@
+// File: android/build.gradle
 buildscript {
-    ext.kotlin_version = '1.9.22'
+    ext {
+        // Kotlin & Gradle versions compatible with Flutter 3.35+
+        kotlin_version = '1.9.22'
+        gradle_version = '8.3.0'
+    }
 
     repositories {
         google()
         mavenCentral()
-        // maven { url 'https://plugins.gradle.org/m2' } // uncomment if you need plugin artifacts
     }
 
     dependencies {
-        classpath 'com.android.tools.build:gradle:8.3.0'
+        classpath "com.android.tools.build:gradle:$gradle_version"
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
-        classpath 'com.google.gms:google-services:4.4.0' // Firebase plugin - update if needed
+        classpath 'com.google.gms:google-services:4.4.2' // Firebase / Google Services plugin
     }
 }
 
@@ -21,6 +25,7 @@ allprojects {
     }
 }
 
+// Ensure consistent build directory structure
 rootProject.buildDir = "../build"
 
 subprojects {
@@ -28,12 +33,12 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+// Clean task
 tasks.register("clean", Delete) {
     delete rootProject.buildDir
 }
 
-// Make sure Kotlin's JVM target matches the JDK/AGP requirements.
-// Use Java 17 for Kotlin 1.9.x + AGP 8.x
+// Ensure Kotlin compiles to Java 17 bytecode (required for AGP 8.x)
 tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
     kotlinJavaToolchain {
         jvmTarget.set(JavaLanguageVersion.of(17))
