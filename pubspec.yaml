@@ -1,7 +1,11 @@
 name: studentapp_new
 description: "Smart Student Management App (Flutter)"
 publish_to: 'none'
-version: 1.0.0+1
+
+# ✅ UPDATED for Play Store release
+# versionName = 1.0.7
+# versionCode = 19
+version: 1.0.7+19
 
 environment:
   sdk: '>=3.4.1 <4.0.0'
@@ -47,12 +51,11 @@ dependencies:
   url_launcher: ^6.2.5
   mime: ^1.0.4
   open_filex: ^4.3.2
-  flutter_sound: ^9.2.13
   image_picker: ^1.0.7
   intl: ^0.19.0
   table_calendar: ^3.0.9
   http_parser: ^4.0.0
-  file_selector: ^1.0.3       # ✅ Replaced file_picker (safe with Firebase 2.x)
+  file_selector: ^1.0.3
 
   # -------------------------
   # 🆕 Circulars / Chat / Teacher Updates & Realtime
@@ -68,11 +71,11 @@ dependencies:
   animations: ^2.0.11
 
   # -------------------------
-  # ✨ New / Helpful Packages for Updated Screens
+  # ✨ New / Helpful Packages
   # -------------------------
-  dropdown_search: ^5.0.3   # searchable dropdown
-  share_plus: ^10.0.0       # share files or text
-  csv: ^5.0.0               # export CSV
+  dropdown_search: ^5.0.3
+  share_plus: ^10.0.0
+  csv: ^5.0.0
 
 dev_dependencies:
   flutter_test:

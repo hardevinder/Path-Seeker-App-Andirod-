@@ -22,14 +22,20 @@ android {
 
     // ✅ Required for 16 KB memory page compatibility (NDK r26+)
     ndkVersion "26.1.10909125"
-    compileSdk 35
+
+    // ✅ UPDATED (plugin requirement)
+    compileSdk 36
 
     defaultConfig {
         applicationId "com.pathseeker.international"
         minSdk 24
-        targetSdk 35
-        versionCode 16
-        versionName "1.0.5"
+
+        // ✅ UPDATED (match compileSdk for new Android plugins)
+        targetSdk 36
+
+        // ✅ Keep these in sync with pubspec.yaml version: 1.0.6+17
+        versionCode 23
+        versionName "1.0.12"
 
         // ✅ Enable multidex if your app has many dependencies
         multiDexEnabled true
