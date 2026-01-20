@@ -1,0 +1,59 @@
+// File: android/build.gradle
+
+buildscript {
+    ext {
+        // ✅ Compatible with upcoming Flutter checks
+        kotlin_version = '2.1.0'
+        gradle_version = '8.6.0'
+
+        // ✅ REQUIRED by hypersdkflutter (Juspay)
+        clientId = "63422"
+    }
+
+    repositories {
+        google()
+        mavenCentral()
+
+        // ❌ REMOVED: Juspay repo (403 Forbidden)
+        // maven { url "https://maven.juspay.in/jp-build-packages/hypersdk-asset-download/releases/" }
+    }
+
+    dependencies {
+        classpath "com.android.tools.build:gradle:$gradle_version"
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+        classpath "com.google.gms:google-services:4.4.2"
+
+        // ❌ REMOVED: HyperSDK asset plugin (403 Forbidden)
+        // classpath "in.juspay:hypersdk-asset-plugin:1.0.3"
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+
+        // ❌ REMOVED: Juspay repo not needed when asset plugin removed
+        // maven { url "https://maven.juspay.in/jp-build-packages/hypersdk-asset-download/releases/" }
+    }
+}
+
+// ✅ Ensure consistent build directory structure
+rootProject.buildDir = "../build"
+
+subprojects {
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
+    project.evaluationDependsOn(":app")
+}
+
+// ✅ Clean task
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
+}
+
+// ✅ Kotlin compile target (Java 17)
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+}

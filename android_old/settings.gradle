@@ -21,13 +21,14 @@ pluginManagement {
 plugins {
     id "dev.flutter.flutter-plugin-loader" version "1.0.0"
 
-    // ✅ UPDATED: Flutter warning fix (AGP 8.6+)
-    id "com.android.application" version "8.6.0" apply false
+    // ✅ FIX: Required by latest AndroidX deps (needs AGP 8.9.1+)
+    id "com.android.application" version "8.9.1" apply false
+    id "com.android.library" version "8.9.1" apply false
 
-    // ✅ UPDATED: Kotlin 2.1.0 (Flutter warning fix)
-    id "org.jetbrains.kotlin.android" version "2.1.0" apply false
+    // ✅ Safe Kotlin for Flutter/Android plugins compatibility
+    id "org.jetbrains.kotlin.android" version "1.9.24" apply false
 
-    // ✅ Add this (recommended) so you don't need old buildscript classpath setup
+    // ✅ Google services (Firebase)
     id "com.google.gms.google-services" version "4.4.2" apply false
 }
 

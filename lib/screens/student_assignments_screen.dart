@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -16,7 +15,8 @@ class StudentAssignmentsScreen extends StatefulWidget {
   const StudentAssignmentsScreen({super.key});
 
   @override
-  State<StudentAssignmentsScreen> createState() => _StudentAssignmentsScreenState();
+  State<StudentAssignmentsScreen> createState() =>
+      _StudentAssignmentsScreenState();
 }
 
 class _StudentAssignmentsScreenState extends State<StudentAssignmentsScreen> {
@@ -79,7 +79,9 @@ class _StudentAssignmentsScreenState extends State<StudentAssignmentsScreen> {
       );
 
       final data = res.data;
-      final list = (data is Map && data['assignments'] is List) ? data['assignments'] as List : <dynamic>[];
+      final list = (data is Map && data['assignments'] is List)
+          ? data['assignments'] as List
+          : <dynamic>[];
       setState(() {
         _assignments = list;
         _lastSyncedAt = DateTime.now();
@@ -134,26 +136,41 @@ class _StudentAssignmentsScreenState extends State<StudentAssignmentsScreen> {
 
       if (_statusFilter == 'all') return true;
 
-      final sa = (a['StudentAssignments'] is List && a['StudentAssignments'].isNotEmpty) ? a['StudentAssignments'][0] : {};
+      final sa = (a['StudentAssignments'] is List && a['StudentAssignments'].isNotEmpty)
+          ? a['StudentAssignments'][0]
+          : {};
       final status = (sa?['status'] ?? '').toString().toLowerCase();
 
       if (_statusFilter == 'overdue') {
-        return _isOverdue(sa?['dueDate']?.toString()) && !['submitted', 'graded'].contains(status);
+        return _isOverdue(sa?['dueDate']?.toString()) &&
+            !['submitted', 'graded'].contains(status);
       }
       return status == _statusFilter;
     }).toList();
 
     int compare(dynamic a, dynamic b) {
-      final sa = (a['StudentAssignments'] is List && a['StudentAssignments'].isNotEmpty) ? a['StudentAssignments'][0] : {};
-      final sb = (b['StudentAssignments'] is List && b['StudentAssignments'].isNotEmpty) ? b['StudentAssignments'][0] : {};
+      final sa = (a['StudentAssignments'] is List && a['StudentAssignments'].isNotEmpty)
+          ? a['StudentAssignments'][0]
+          : {};
+      final sb = (b['StudentAssignments'] is List && b['StudentAssignments'].isNotEmpty)
+          ? b['StudentAssignments'][0]
+          : {};
 
       int av, bv;
       if (_sortBy == 'due') {
-        av = sa?['dueDate'] != null ? DateTime.tryParse(sa['dueDate'].toString())?.millisecondsSinceEpoch ?? 0 : 0;
-        bv = sb?['dueDate'] != null ? DateTime.tryParse(sb['dueDate'].toString())?.millisecondsSinceEpoch ?? 0 : 0;
+        av = sa?['dueDate'] != null
+            ? DateTime.tryParse(sa['dueDate'].toString())?.millisecondsSinceEpoch ?? 0
+            : 0;
+        bv = sb?['dueDate'] != null
+            ? DateTime.tryParse(sb['dueDate'].toString())?.millisecondsSinceEpoch ?? 0
+            : 0;
       } else {
-        av = a['updatedAt'] != null ? DateTime.tryParse(a['updatedAt'].toString())?.millisecondsSinceEpoch ?? 0 : 0;
-        bv = b['updatedAt'] != null ? DateTime.tryParse(b['updatedAt'].toString())?.millisecondsSinceEpoch ?? 0 : 0;
+        av = a['updatedAt'] != null
+            ? DateTime.tryParse(a['updatedAt'].toString())?.millisecondsSinceEpoch ?? 0
+            : 0;
+        bv = b['updatedAt'] != null
+            ? DateTime.tryParse(b['updatedAt'].toString())?.millisecondsSinceEpoch ?? 0
+            : 0;
       }
       final diff = av - bv;
       return _sortDir == 'asc' ? diff : -diff;
@@ -163,30 +180,21 @@ class _StudentAssignmentsScreenState extends State<StudentAssignmentsScreen> {
     return filtered;
   }
 
-  // Request appropriate storage permission (Android) / nothing on iOS
-  Future<bool> _ensureStoragePermission() async {
-    if (kIsWeb) return true;
-    if (Platform.isAndroid) {
-      final status = await Permission.storage.request();
-      if (status.isGranted) return true;
-
-      final manageStatus = await Permission.manageExternalStorage.request();
-      if (manageStatus.isGranted) return true;
-
-      return false;
-    } else if (Platform.isIOS) {
-      return true;
-    } else {
-      return true;
-    }
-  }
+  // NOTE:
+  // We intentionally DO NOT request storage/media permissions.
+  // Downloads are saved to app-specific directory and opened via OpenFilex.
+  // This keeps Play Console compliant (no READ_MEDIA_* / storage runtime prompts).
 
   Future<Directory> _defaultSaveDirectory() async {
-    if (kIsWeb) throw Exception('Web is not supported for file downloads using this function.');
+    if (kIsWeb) {
+      throw Exception('Web is not supported for file downloads using this function.');
+    }
+    // App-specific external directory on Android (no permission required)
     if (Platform.isAndroid) {
       final dir = await getExternalStorageDirectory();
       if (dir != null) return dir;
     }
+    // App documents directory (no permission required)
     return await getApplicationDocumentsDirectory();
   }
 
@@ -196,27 +204,27 @@ class _StudentAssignmentsScreenState extends State<StudentAssignmentsScreen> {
 
   Future<void> _downloadAndOpen(String rawUrl, String suggestedName) async {
     if (rawUrl.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Invalid file URL')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Invalid file URL')));
       return;
     }
 
     final url = rawUrl.startsWith('http') ? rawUrl : '$baseUrl/$rawUrl';
-    final okPerm = await _ensureStoragePermission();
-    if (!okPerm) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Storage permission denied')));
-      return;
-    }
 
     Directory saveDir;
     try {
       saveDir = await _defaultSaveDirectory();
     } catch (e) {
       debugPrint('Default save dir error: $e');
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to locate save directory: $e')));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to locate save directory: $e')),
+      );
       return;
     }
 
-    final fileName = _sanitizeFilename(suggestedName.isNotEmpty ? suggestedName : url.split('/').last);
+    final fileName =
+        _sanitizeFilename(suggestedName.isNotEmpty ? suggestedName : url.split('/').last);
     final savePath = '${saveDir.path}/$fileName';
 
     setState(() => _downloadProgress[url] = 0);
@@ -242,7 +250,8 @@ class _StudentAssignmentsScreenState extends State<StudentAssignmentsScreen> {
       });
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Downloaded: $fileName')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Downloaded: $fileName')));
 
       final result = await OpenFilex.open(savePath);
       debugPrint('OpenFilex result: ${result.message}');
@@ -250,12 +259,14 @@ class _StudentAssignmentsScreenState extends State<StudentAssignmentsScreen> {
       debugPrint('Download DioError: $e');
       setState(() => _downloadProgress.remove(url));
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Download failed: ${e.message}')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Download failed: ${e.message}')));
     } catch (e) {
       debugPrint('Download error: $e');
       setState(() => _downloadProgress.remove(url));
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Download failed: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Download failed: $e')));
     }
   }
 
@@ -263,26 +274,61 @@ class _StudentAssignmentsScreenState extends State<StudentAssignmentsScreen> {
     final stats = _computeStats();
     return Container(
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [Color(0xFF1652F0), Color(0xFF0C77D6)]),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1652F0), Color(0xFF0C77D6)],
+        ),
         borderRadius: BorderRadius.circular(12),
       ),
       padding: const EdgeInsets.all(16),
       margin: const EdgeInsets.only(bottom: 12),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('Your Assignments', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+        const Text(
+          'Your Assignments',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         const SizedBox(height: 6),
-        Text(_lastSyncedAt != null ? 'Last synced: ${TimeOfDay.fromDateTime(_lastSyncedAt!).format(context)}' : 'Syncing…', style: const TextStyle(color: Colors.white70)),
+        Text(
+          _lastSyncedAt != null
+              ? 'Last synced: ${TimeOfDay.fromDateTime(_lastSyncedAt!).format(context)}'
+              : 'Syncing…',
+          style: const TextStyle(color: Colors.white70),
+        ),
         const SizedBox(height: 8),
         Wrap(spacing: 8, children: [
           Chip(label: Text('Total: ${stats['total']}')),
-          Chip(backgroundColor: Colors.green.shade50, label: Text('Graded: ${stats['graded']}')),
-          Chip(backgroundColor: Colors.blue.shade50, label: Text('Submitted: ${stats['submitted']}')),
-          Chip(backgroundColor: Colors.red.shade50, label: Text('Overdue: ${stats['overdue']}')),
+          Chip(
+            backgroundColor: Colors.green.shade50,
+            label: Text('Graded: ${stats['graded']}'),
+          ),
+          Chip(
+            backgroundColor: Colors.blue.shade50,
+            label: Text('Submitted: ${stats['submitted']}'),
+          ),
+          Chip(
+            backgroundColor: Colors.red.shade50,
+            label: Text('Overdue: ${stats['overdue']}'),
+          ),
           ElevatedButton.icon(
-            icon: _isRefreshing ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.refresh),
+            icon: _isRefreshing
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.refresh),
             label: Text(_isRefreshing ? 'Refreshing…' : 'Refresh'),
             onPressed: _isRefreshing ? null : () => _fetchAssignments(keepLoading: true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.black),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.black,
+            ),
           ),
         ]),
       ]),
@@ -293,11 +339,15 @@ class _StudentAssignmentsScreenState extends State<StudentAssignmentsScreen> {
     int total = _assignments.length;
     int submitted = 0, graded = 0, overdue = 0;
     for (final a in _assignments) {
-      final sa = (a['StudentAssignments'] is List && a['StudentAssignments'].isNotEmpty) ? a['StudentAssignments'][0] : {};
+      final sa = (a['StudentAssignments'] is List && a['StudentAssignments'].isNotEmpty)
+          ? a['StudentAssignments'][0]
+          : {};
       final status = (sa?['status'] ?? '').toString().toLowerCase();
       if (status == 'submitted') submitted++;
       if (status == 'graded') graded++;
-      if (!['submitted', 'graded'].contains(status) && _isOverdue(sa?['dueDate']?.toString())) overdue++;
+      if (!['submitted', 'graded'].contains(status) && _isOverdue(sa?['dueDate']?.toString())) {
+        overdue++;
+      }
     }
     return {'total': total, 'submitted': submitted, 'graded': graded, 'overdue': overdue};
   }
@@ -307,7 +357,11 @@ class _StudentAssignmentsScreenState extends State<StudentAssignmentsScreen> {
       Row(children: [
         Expanded(
           child: TextField(
-            decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Search title or content…', border: OutlineInputBorder()),
+            decoration: const InputDecoration(
+              prefixIcon: Icon(Icons.search),
+              hintText: 'Search title or content…',
+              border: OutlineInputBorder(),
+            ),
             onChanged: (v) => setState(() => _search = v),
           ),
         ),
@@ -338,28 +392,36 @@ class _StudentAssignmentsScreenState extends State<StudentAssignmentsScreen> {
         const SizedBox(width: 12),
         IconButton(
           onPressed: () => setState(() => _sortDir = _sortDir == 'asc' ? 'desc' : 'asc'),
-          icon: Text(_sortDir == 'asc' ? '↑' : '↓', style: const TextStyle(fontSize: 18)),
+          icon: Text(
+            _sortDir == 'asc' ? '↑' : '↓',
+            style: const TextStyle(fontSize: 18),
+          ),
         ),
         const Spacer(),
-        Text(_filteredSorted.length.toString() + ' results', style: const TextStyle(color: Colors.black54)),
+        Text('${_filteredSorted.length} results',
+            style: const TextStyle(color: Colors.black54)),
       ]),
     ]);
   }
 
   Widget _buildAssignmentCard(dynamic assignment) {
-    final id = assignment['id']?.toString() ?? '';
     final title = assignment['title']?.toString() ?? 'Untitled';
     final content = assignment['content']?.toString() ?? '';
-    final createdAt = assignment['createdAt']?.toString();
     final updatedAt = assignment['updatedAt']?.toString();
-    final youtubeUrl = assignment['youtubeUrl']?.toString() ?? assignment['youtube_url']?.toString();
-    final files = assignment['AssignmentFiles'] is List ? List.from(assignment['AssignmentFiles']) : <dynamic>[];
+    final youtubeUrl = assignment['youtubeUrl']?.toString() ??
+        assignment['youtube_url']?.toString();
+    final files = assignment['AssignmentFiles'] is List
+        ? List.from(assignment['AssignmentFiles'])
+        : <dynamic>[];
 
-    final sa = (assignment['StudentAssignments'] is List && assignment['StudentAssignments'].isNotEmpty) ? assignment['StudentAssignments'][0] : {};
+    final sa = (assignment['StudentAssignments'] is List && assignment['StudentAssignments'].isNotEmpty)
+        ? assignment['StudentAssignments'][0]
+        : {};
     final status = (sa?['status'] ?? 'unknown').toString();
     final due = sa?['dueDate']?.toString();
 
-    final isOver = _isOverdue(due) && !['submitted', 'graded'].contains(status.toLowerCase());
+    final isOver = _isOverdue(due) &&
+        !['submitted', 'graded'].contains(status.toLowerCase());
 
     String statusLabel = status;
     if (isOver) statusLabel = 'Overdue';
@@ -390,18 +452,35 @@ class _StudentAssignmentsScreenState extends State<StudentAssignmentsScreen> {
         padding: const EdgeInsets.all(12),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            Expanded(child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+            ),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(color: statusColor.withOpacity(0.12), borderRadius: BorderRadius.circular(20)),
-              child: Text(statusLabel, style: TextStyle(color: statusColor, fontWeight: FontWeight.w700)),
+              decoration: BoxDecoration(
+                color: statusColor.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                statusLabel,
+                style: TextStyle(color: statusColor, fontWeight: FontWeight.w700),
+              ),
             ),
           ]),
           const SizedBox(height: 8),
           Row(children: [
-            Text('Due: ${due != null ? _formatDate(due) : 'N/A'}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
+            Text(
+              'Due: ${due != null ? _formatDate(due) : 'N/A'}',
+              style: const TextStyle(fontSize: 12, color: Colors.black54),
+            ),
             const SizedBox(width: 12),
-            Text('Updated: ${updatedAt != null ? _formatDate(updatedAt) : 'N/A'}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
+            Text(
+              'Updated: ${updatedAt != null ? _formatDate(updatedAt) : 'N/A'}',
+              style: const TextStyle(fontSize: 12, color: Colors.black54),
+            ),
           ]),
           const SizedBox(height: 8),
           if (youtubeUrl != null && youtubeUrl.isNotEmpty)
@@ -414,7 +493,9 @@ class _StudentAssignmentsScreenState extends State<StudentAssignmentsScreen> {
                     await launchUrl(uri, mode: LaunchMode.externalApplication);
                   } else {
                     if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cannot open video link')));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Cannot open video link')),
+                    );
                   }
                 },
                 icon: const Icon(Icons.play_circle_outline),
@@ -431,8 +512,13 @@ class _StudentAssignmentsScreenState extends State<StudentAssignmentsScreen> {
               const Text('Attachments', style: TextStyle(fontWeight: FontWeight.w700)),
               const SizedBox(height: 6),
               ...files.map<Widget>((f) {
-                final fileUrl = (f['filePath'] ?? f['file_path'] ?? f['url'] ?? '').toString();
-                final fileName = (f['fileName'] ?? f['file_name'] ?? f['name'] ?? fileUrl.split('/').last).toString();
+                final fileUrl =
+                    (f['filePath'] ?? f['file_path'] ?? f['url'] ?? '').toString();
+                final fileName = (f['fileName'] ??
+                        f['file_name'] ??
+                        f['name'] ??
+                        fileUrl.split('/').last)
+                    .toString();
 
                 final progress = _downloadProgress[fileUrl] ?? 0.0;
                 final savedPath = _localFilePaths[fileUrl];
@@ -440,7 +526,15 @@ class _StudentAssignmentsScreenState extends State<StudentAssignmentsScreen> {
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 6.0),
                   child: Row(children: [
-                    Expanded(child: Text(fileName, style: const TextStyle(color: Colors.blueAccent, decoration: TextDecoration.underline))),
+                    Expanded(
+                      child: Text(
+                        fileName,
+                        style: const TextStyle(
+                          color: Colors.blueAccent,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
                     if (savedPath != null)
                       TextButton.icon(
                         onPressed: () => OpenFilex.open(savedPath),
@@ -457,7 +551,7 @@ class _StudentAssignmentsScreenState extends State<StudentAssignmentsScreen> {
                         onPressed: () => _downloadAndOpen(fileUrl, fileName),
                         icon: const Icon(Icons.download, size: 18),
                         label: const Text('Download'),
-                      )
+                      ),
                   ]),
                 );
               }).toList(),
@@ -470,10 +564,7 @@ class _StudentAssignmentsScreenState extends State<StudentAssignmentsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // Replaced custom StudentAppBar with a simple AppBar titled "Assignments"
-           appBar: AppBar(
-        // If this page can be popped (pushed onto navigator), show a back arrow.
-        // Otherwise show the drawer/menu icon so user can open the drawer.
+      appBar: AppBar(
         leading: Builder(builder: (innerCtx) {
           final canPop = Navigator.of(innerCtx).canPop();
           if (canPop) {
@@ -483,7 +574,6 @@ class _StudentAssignmentsScreenState extends State<StudentAssignmentsScreen> {
               tooltip: 'Back',
             );
           } else {
-            // show drawer icon (works because Scaffold has a drawer)
             return IconButton(
               icon: const Icon(Icons.menu),
               onPressed: () {
@@ -500,7 +590,6 @@ class _StudentAssignmentsScreenState extends State<StudentAssignmentsScreen> {
         centerTitle: true,
         elevation: 3,
       ),
-
       drawer: const StudentDrawerMenu(),
       body: SafeArea(
         child: RefreshIndicator(
@@ -515,20 +604,32 @@ class _StudentAssignmentsScreenState extends State<StudentAssignmentsScreen> {
               const SizedBox(height: 12),
               if (_loading)
                 Column(
-                  children: List.generate(3, (i) => Card(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    child: SizedBox(height: 120, child: Center(child: CircularProgressIndicator())),
-                  )),
+                  children: List.generate(
+                    3,
+                    (i) => const Card(
+                      margin: EdgeInsets.only(bottom: 12),
+                      child: SizedBox(
+                        height: 120,
+                        child: Center(child: CircularProgressIndicator()),
+                      ),
+                    ),
+                  ),
                 )
               else if (_error != null)
                 Container(
                   padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(10)),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent.shade100,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                   child: Row(children: [
                     const Icon(Icons.error_outline, color: Colors.red),
                     const SizedBox(width: 8),
-                    Expanded(child: Text(_error!, style: const TextStyle(color: Colors.red))),
-                    TextButton(onPressed: () => _fetchAssignments(), child: const Text('Retry')),
+                    Expanded(child: Text(_error!, style: const TextStyle(color: Colors.white))),
+                    TextButton(
+                      onPressed: () => _fetchAssignments(),
+                      child: const Text('Retry'),
+                    ),
                   ]),
                 )
               else if (_filteredSorted.isEmpty)
@@ -540,12 +641,17 @@ class _StudentAssignmentsScreenState extends State<StudentAssignmentsScreen> {
                       const SizedBox(height: 8),
                       const Text('No assignments found', style: TextStyle(color: Colors.black54)),
                       const SizedBox(height: 8),
-                      ElevatedButton(onPressed: () => _fetchAssignments(), child: const Text('Reload')),
+                      ElevatedButton(
+                        onPressed: () => _fetchAssignments(),
+                        child: const Text('Reload'),
+                      ),
                     ]),
                   ),
                 )
               else
-                Column(children: _filteredSorted.map((a) => _buildAssignmentCard(a)).toList()),
+                Column(
+                  children: _filteredSorted.map((a) => _buildAssignmentCard(a)).toList(),
+                ),
               const SizedBox(height: 30),
             ]),
           ),

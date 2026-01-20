@@ -11,9 +11,11 @@ import 'package:http/http.dart' as http;
 import 'firebase_options.dart';
 import 'constants/constants.dart'; // ✅ single source of truth (LIVE baseUrl)
 
+// auth / base screens
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
-// ❌ REMOVED: chat_screen.dart
+
+// student screens
 import 'screens/contact_list_screen.dart';
 import 'screens/student_fee_screen.dart';
 import 'screens/student_assignments_screen.dart';
@@ -33,11 +35,14 @@ import 'screens/teacher/substituted_listing.dart';
 import 'screens/teacher/teacher_leave_requests.dart';
 import 'screens/teacher/teacher_digital_diary_screen.dart';
 
+// ✅ NEW: My Attendance Calendar screen
+import 'screens/teacher/my_attendance_calendar.dart';
+
+// ✅ NEW: Teacher self leave screen (apply + status)
+import 'screens/teacher/teacher_my_leave_requests_screen.dart';
+
 import 'services/notification_service.dart';
 import 'services/api_service.dart';
-
-// NOTE: If you already have a separate file widgets/student_app_bar.dart
-// and you use it elsewhere, keep that file. This main.dart doesn't need it.
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -83,7 +88,6 @@ Future<void> main() async {
   }
 
   // ✅ Init notifications + sync token to backend
-  // NotificationService should also setup foreground listeners + local notifications.
   try {
     await NotificationService.initialize(
       onToken: (fcmToken) async {
@@ -101,9 +105,8 @@ Future<void> main() async {
   final authToken = prefs.getString('authToken');
   final activeRole = (prefs.getString('activeRole') ?? '').toLowerCase();
 
-  final initialRoute = authToken == null
-      ? '/login'
-      : (activeRole == 'teacher' ? '/teacher' : '/dashboard');
+  final initialRoute =
+      authToken == null ? '/login' : (activeRole == 'teacher' ? '/teacher' : '/dashboard');
 
   runApp(StudentApp(initialRoute: initialRoute));
 }
@@ -213,15 +216,21 @@ class StudentApp extends StatelessWidget {
           // Teacher
           '/teacher': (context) => const TeacherDashboard(),
           '/teacher/attendance': (context) => const MarkAttendanceScreen(),
-          '/teacher/leave-requests': (context) =>
-              const TeacherLeaveRequestsScreen(),
+
+          // ✅ Teacher: approve/reject STUDENT leave requests
+          '/teacher/leave-requests': (context) => const TeacherLeaveRequestsScreen(),
+
+          // ✅ Teacher: apply for OWN leave + view status
+          '/teacher/my-leaves': (context) => const TeacherMyLeaveRequestsScreen(),
+
           '/teacher/circulars': (context) => const TeacherCircularsScreen(),
-          '/teacher-timetable-display': (context) =>
-              const TeacherTimetableDisplayScreen(),
-          '/teacher/substitutions': (context) =>
-              const TeacherSubstitutionListing(),
+          '/teacher-timetable-display': (context) => const TeacherTimetableDisplayScreen(),
+          '/teacher/substitutions': (context) => const TeacherSubstitutionListing(),
           '/teacher/substituted': (context) => const TeacherSubstitutedListing(),
           '/teacher/diary': (context) => const TeacherDigitalDiaryScreen(),
+
+          // ✅ NEW: My Attendance Calendar (Teacher)
+          '/my-attendance-calendar': (context) => const MyAttendanceCalendarScreen(),
 
           // Student
           '/contacts': (context) => const ContactListScreen(),
@@ -238,6 +247,7 @@ class StudentApp extends StatelessWidget {
           // ❌ REMOVED COMPLETELY:
           // '/chat': (context) => ChatScreen(...)
         },
+
         // ✅ Optional: if any old code tries to open "/chat", route it safely
         onGenerateRoute: (settings) {
           if (settings.name == '/chat') {

@@ -15,9 +15,15 @@ import '../../constants/constants.dart';
 import '../../widgets/teacher_app_bar.dart';
 import '../../services/api_service.dart';
 import 'teacher_digital_diary_screen.dart';
+import 'teacher_my_leave_requests_screen.dart';
+
 
 /// Teacher Dashboard Screen
 /// Displays key performance indicators, quick actions, and recent activities for teachers.
+///
+/// ✅ Update in this version:
+/// - Shows a highlighted banner on dashboard when there are pending leave requests
+///   (no popup / no snackbar / nothing else)
 class TeacherDashboard extends StatefulWidget {
   const TeacherDashboard({super.key});
 
@@ -46,6 +52,9 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
   int _pendingLeave = 0;
   int _newCircularsCount = 0;
 
+  // ✅ NEW: dashboard highlight flag (no alerts/popup)
+  bool _showLeaveHighlight = false;
+
   // Data Collections
   List<dynamic> _periods = [];
   List<dynamic> _todayClasses = [];
@@ -72,7 +81,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
 
   // Timers and Controllers
   Timer? _refreshTimer;
-  final PageController _kpiPageController = PageController(viewportFraction: 0.88);
+  final PageController _kpiPageController =
+      PageController(viewportFraction: 0.88);
   int _kpiPageIndex = 0;
 
   @override
@@ -124,7 +134,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
     if (stored != null) {
       try {
         final parsed = jsonDecode(stored) as List<dynamic>;
-        _notifications = parsed.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        _notifications =
+            parsed.map((e) => Map<String, dynamic>.from(e as Map)).toList();
       } catch (_) {
         _notifications = [];
       }
@@ -170,13 +181,16 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
 
   /// Starts periodic data refresh every 3 minutes.
   void _startPeriodicRefresh() {
-    _refreshTimer = Timer.periodic(const Duration(minutes: 3), (_) => _fetchAllData());
+    _refreshTimer =
+        Timer.periodic(const Duration(minutes: 3), (_) => _fetchAllData());
   }
 
   /// Retrieves the teacher ID from SharedPreferences.
   Future<String?> _getTeacherId() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('teacherId') ?? prefs.getString('userId') ?? prefs.getString('username');
+    return prefs.getString('teacherId') ??
+        prefs.getString('userId') ??
+        prefs.getString('username');
   }
 
   // API Fetch Methods
@@ -212,7 +226,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
         }
         final todayName = DateFormat('EEEE').format(DateTime.now());
         final todayClasses = timetable.where((record) {
-          final day = (record is Map && record['day'] != null) ? record['day'].toString() : '';
+          final day =
+              (record is Map && record['day'] != null) ? record['day'].toString() : '';
           return _normalizeDayName(day).toLowerCase() == todayName.toLowerCase();
         }).toList();
         setState(() {
@@ -239,10 +254,13 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
           final classId = _extractClassId(firstStudent);
           if (classId != null) {
             final todayString = _dateFormat.format(DateTime.now());
-            final attendanceResponse = await ApiService.rawGet('/attendance/date/$todayString/$classId');
+            final attendanceResponse =
+                await ApiService.rawGet('/attendance/date/$todayString/$classId');
             if (attendanceResponse.statusCode == 200 && mounted) {
               final attendanceJson = jsonDecode(attendanceResponse.body);
-              final rows = attendanceJson is List ? attendanceJson : (attendanceJson['rows'] ?? <dynamic>[]);
+              final rows = attendanceJson is List
+                  ? attendanceJson
+                  : (attendanceJson['rows'] ?? <dynamic>[]);
               setState(() => _attendanceMarked = (rows as List).isNotEmpty);
             } else {
               setState(() => _attendanceMarked = false);
@@ -261,7 +279,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
     }
   }
 
-  /// Fetches pending leave requests.
+  /// ✅ Fetches pending leave requests + toggles dashboard highlight
   Future<void> _fetchPendingLeaves() async {
     try {
       final response = await ApiService.rawGet('/leave');
@@ -269,13 +287,29 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
         final json = jsonDecode(response.body);
         final data = json is List ? json : (json['data'] ?? <dynamic>[]);
         final pendingCount = (data as List).where((leave) {
+          if (leave is! Map) return false;
           final status = (leave['status'] ?? '').toString().toLowerCase();
           return status == 'pending';
         }).length;
-        setState(() => _pendingLeave = pendingCount);
+
+        setState(() {
+          _pendingLeave = pendingCount;
+          _showLeaveHighlight = pendingCount > 0;
+        });
+      } else if (mounted) {
+        // If API fails, don't show highlight
+        setState(() {
+          _pendingLeave = 0;
+          _showLeaveHighlight = false;
+        });
       }
     } catch (_) {
-      // Silently handle errors
+      if (mounted) {
+        setState(() {
+          _pendingLeave = 0;
+          _showLeaveHighlight = false;
+        });
+      }
     }
   }
 
@@ -290,7 +324,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
         list.sort((a, b) => _compareDates(b['createdAt'], a['createdAt']));
         final now = DateTime.now();
         final newCount = list.where((circular) {
-          final created = DateTime.tryParse(circular['createdAt']?.toString() ?? '') ?? now;
+          final created =
+              DateTime.tryParse(circular['createdAt']?.toString() ?? '') ?? now;
           return now.difference(created).inHours < 48;
         }).length;
         setState(() {
@@ -308,17 +343,24 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
     try {
       final todayString = _dateFormat.format(DateTime.now());
       final paramPrefix = teacherId != null ? '&teacherId=$teacherId' : '';
-      final [tookResponse, freedResponse] = await Future.wait([
-        ApiService.rawGet('/substitutions/by-date/original?date=$todayString$paramPrefix'),
-        ApiService.rawGet('/substitutions/by-date/substituted?date=$todayString$paramPrefix'),
+      final results = await Future.wait([
+        ApiService.rawGet(
+            '/substitutions/by-date/original?date=$todayString$paramPrefix'),
+        ApiService.rawGet(
+            '/substitutions/by-date/substituted?date=$todayString$paramPrefix'),
       ]);
+      final tookResponse = results[0];
+      final freedResponse = results[1];
+
       if (tookResponse.statusCode == 200 && mounted) {
         final json = jsonDecode(tookResponse.body);
-        setState(() => _substitutionsTook = (json is List) ? json : (json['rows'] ?? <dynamic>[]));
+        setState(() => _substitutionsTook =
+            (json is List) ? json : (json['rows'] ?? <dynamic>[]));
       }
       if (freedResponse.statusCode == 200 && mounted) {
         final json = jsonDecode(freedResponse.body);
-        setState(() => _substitutionsFreed = (json is List) ? json : (json['rows'] ?? <dynamic>[]));
+        setState(() => _substitutionsFreed =
+            (json is List) ? json : (json['rows'] ?? <dynamic>[]));
       }
     } catch (_) {
       // Silently handle errors
@@ -359,15 +401,28 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
     if (value.isEmpty) return '';
     final normalized = value.trim().toLowerCase();
     const dayMap = {
-      'sun': 'Sunday', 'sunday': 'Sunday',
-      'mon': 'Monday', 'monday': 'Monday',
-      'tue': 'Tuesday', 'tues': 'Tuesday', 'tuesday': 'Tuesday',
-      'wed': 'Wednesday', 'wednesday': 'Wednesday',
-      'thu': 'Thursday', 'thur': 'Thursday', 'thurs': 'Thursday', 'thursday': 'Thursday',
-      'fri': 'Friday', 'friday': 'Friday',
-      'sat': 'Saturday', 'saturday': 'Saturday',
+      'sun': 'Sunday',
+      'sunday': 'Sunday',
+      'mon': 'Monday',
+      'monday': 'Monday',
+      'tue': 'Tuesday',
+      'tues': 'Tuesday',
+      'tuesday': 'Tuesday',
+      'wed': 'Wednesday',
+      'wednesday': 'Wednesday',
+      'thu': 'Thursday',
+      'thur': 'Thursday',
+      'thurs': 'Thursday',
+      'thursday': 'Thursday',
+      'fri': 'Friday',
+      'friday': 'Friday',
+      'sat': 'Saturday',
+      'saturday': 'Saturday',
     };
-    return dayMap[normalized] ?? (normalized.isNotEmpty ? normalized[0].toUpperCase() + normalized.substring(1) : normalized);
+    return dayMap[normalized] ??
+        (normalized.isNotEmpty
+            ? normalized[0].toUpperCase() + normalized.substring(1)
+            : normalized);
   }
 
   /// Extracts class ID from student record.
@@ -378,8 +433,10 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
 
   /// Compares two dates for sorting (descending).
   int _compareDates(dynamic dateA, dynamic dateB) {
-    final timeA = DateTime.tryParse(dateA?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
-    final timeB = DateTime.tryParse(dateB?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+    final timeA = DateTime.tryParse(dateA?.toString() ?? '') ??
+        DateTime.fromMillisecondsSinceEpoch(0);
+    final timeB = DateTime.tryParse(dateB?.toString() ?? '') ??
+        DateTime.fromMillisecondsSinceEpoch(0);
     return timeB.compareTo(timeA);
   }
 
@@ -402,8 +459,10 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
       ].join('|');
 
       final target = {
-        'classId': item['classId'] ?? (item['class'] is Map ? item['class']['id'] : null),
-        'sectionId': item['sectionId'] ?? (item['section'] is Map ? item['section']['id'] : null),
+        'classId':
+            item['classId'] ?? (item['class'] is Map ? item['class']['id'] : null),
+        'sectionId': item['sectionId'] ??
+            (item['section'] is Map ? item['section']['id'] : null),
         'class': item['class'] ?? (item['Class'] ?? null),
         'section': item['section'] ?? (item['Section'] ?? null),
       };
@@ -414,23 +473,33 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
         copy['targets'] = [target];
         copy['_sourceIds'] = [item['id']];
         copy['_counts'] = {
-          'views': (item['views'] is List) ? (item['views'] as List).length : (item['_counts']?['views'] ?? 0),
-          'acks': (item['acknowledgements'] is List) ? (item['acknowledgements'] as List).length : (item['_counts']?['acks'] ?? 0),
+          'views': (item['views'] is List)
+              ? (item['views'] as List).length
+              : (item['_counts']?['views'] ?? 0),
+          'acks': (item['acknowledgements'] is List)
+              ? (item['acknowledgements'] as List).length
+              : (item['_counts']?['acks'] ?? 0),
         };
         grouped[key] = copy;
       } else {
         final exists = (existing['targets'] as List).any((t) =>
-            (t['classId']?.toString() ?? '') == (target['classId']?.toString() ?? '') &&
-            (t['sectionId']?.toString() ?? '') == (target['sectionId']?.toString() ?? ''));
+            (t['classId']?.toString() ?? '') ==
+                (target['classId']?.toString() ?? '') &&
+            (t['sectionId']?.toString() ?? '') ==
+                (target['sectionId']?.toString() ?? ''));
         if (!exists) {
           (existing['targets'] as List).add(target);
         }
         (existing['_sourceIds'] as List).add(item['id']);
         existing['_counts'] ??= {'views': 0, 'acks': 0};
         final addViews = (item['views'] is List) ? (item['views'] as List).length : 0;
-        final addAcks = (item['acknowledgements'] is List) ? (item['acknowledgements'] as List).length : 0;
-        existing['_counts']['views'] = (existing['_counts']['views'] ?? 0) + addViews;
-        existing['_counts']['acks'] = (existing['_counts']['acks'] ?? 0) + addAcks;
+        final addAcks = (item['acknowledgements'] is List)
+            ? (item['acknowledgements'] as List).length
+            : 0;
+        existing['_counts']['views'] =
+            (existing['_counts']['views'] ?? 0) + addViews;
+        existing['_counts']['acks'] =
+            (existing['_counts']['acks'] ?? 0) + addAcks;
       }
     }
 
@@ -440,7 +509,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
       return map;
     }).toList();
 
-    output.sort((a, b) => _compareDates(a['createdAt'] ?? a['date'], b['createdAt'] ?? b['date']));
+    output.sort((a, b) =>
+        _compareDates(a['createdAt'] ?? a['date'], b['createdAt'] ?? b['date']));
 
     return output.cast<Map<String, dynamic>>();
   }
@@ -512,6 +582,13 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
           children: [
             _buildHeroSection(),
+
+            // ✅ NEW: Highlight banner (ONLY UI, nothing else)
+            if (_showLeaveHighlight) ...[
+              const SizedBox(height: 10),
+              _buildLeaveHighlightBanner(),
+            ],
+
             const SizedBox(height: 14),
             _buildKpiSlider(),
             const SizedBox(height: 12),
@@ -524,6 +601,51 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
             if (_showCoScholastic) _buildCoScholasticCard(),
             if (_showRemarks) _buildRemarksCard(),
             const SizedBox(height: 80),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ✅ NEW: highlighted banner widget
+  Widget _buildLeaveHighlightBanner() {
+    return GestureDetector(
+      onTap: () => Navigator.pushNamed(context, '/teacher/leave-requests'),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.orange.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.orange.withOpacity(0.35)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.22),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.notifications_active,
+                  color: Colors.orange.shade800, size: 18),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '$_pendingLeave pending leave request${_pendingLeave == 1 ? '' : 's'}',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+            Text(
+              'View',
+              style: TextStyle(
+                color: Colors.orange.shade900,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Icon(Icons.chevron_right, color: Colors.orange.shade900),
           ],
         ),
       ),
@@ -543,9 +665,12 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
               child: ListView(
                 padding: EdgeInsets.zero,
                 children: [
-                  _buildDrawerListTile(Icons.dashboard_rounded, 'Dashboard', _navigateToDashboard),
-                  _buildDrawerListTile(Icons.calendar_today, 'Timetable', () => _navigateTo('/teacher-timetable-display')),
-                  _buildDrawerListTile(Icons.campaign, 'Circulars', () => _navigateTo('/view-circulars')),
+                  _buildDrawerListTile(
+                      Icons.dashboard_rounded, 'Dashboard', _navigateToDashboard),
+                  _buildDrawerListTile(Icons.calendar_today, 'Timetable',
+                      () => _navigateTo('/teacher-timetable-display')),
+                  _buildDrawerListTile(Icons.campaign, 'Circulars',
+                      () => _navigateTo('/view-circulars')),
                   const Divider(),
                   _buildDrawerListTile(Icons.logout, 'Logout', _handleLogout),
                 ],
@@ -563,10 +688,11 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
       child: SafeArea(
         child: Column(
           children: [
-            _buildDrawerHeader('Notifications', trailing: IconButton(
-              icon: const Icon(Icons.clear_all),
-              onPressed: _clearAllNotifications,
-            )),
+            _buildDrawerHeader('Notifications',
+                trailing: IconButton(
+                  icon: const Icon(Icons.clear_all),
+                  onPressed: _clearAllNotifications,
+                )),
             Expanded(
               child: _notifications.isEmpty
                   ? const Center(child: Text('No notifications yet.'))
@@ -589,10 +715,11 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
   Widget _buildDrawerHeader(String title, {Widget? trailing}) {
     return ListTile(
       title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-      trailing: trailing ?? IconButton(
-        icon: const Icon(Icons.close),
-        onPressed: () => Navigator.of(context).pop(),
-      ),
+      trailing: trailing ??
+          IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
     );
   }
 
@@ -679,7 +806,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [Color(0xFF6C63FF), Color(0xFF9B8CFF)]),
+        gradient: const LinearGradient(
+            colors: [Color(0xFF6C63FF), Color(0xFF9B8CFF)]),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
@@ -716,7 +844,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
             ),
           ),
           IconButton(
-            onPressed: () => setState(() => _showCoScholastic = !_showCoScholastic),
+            onPressed: () =>
+                setState(() => _showCoScholastic = !_showCoScholastic),
             icon: Icon(
               _showCoScholastic ? Icons.toggle_on : Icons.toggle_off,
               color: Colors.white,
@@ -733,7 +862,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
     return CircleAvatar(
       radius: 34,
       backgroundColor: Colors.white,
-      backgroundImage: _profilePhotoUrl != null ? NetworkImage(_profilePhotoUrl!) : null,
+      backgroundImage:
+          _profilePhotoUrl != null ? NetworkImage(_profilePhotoUrl!) : null,
       child: _profilePhotoUrl == null
           ? Text(
               displayName.isNotEmpty ? displayName[0].toUpperCase() : 'T',
@@ -758,9 +888,24 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
   /// Builds the KPI slider with pagination.
   Widget _buildKpiSlider() {
     final kpis = [
-      {'icon': Icons.table_chart, 'label': "Today's Classes", 'value': _todaysClasses.toString(), 'tone': null},
-      {'icon': Icons.inbox, 'label': 'Pending Leave', 'value': _pendingLeave.toString(), 'tone': Colors.orange},
-      {'icon': Icons.campaign, 'label': 'New Circulars', 'value': _newCircularsCount.toString(), 'tone': Colors.blueAccent},
+      {
+        'icon': Icons.table_chart,
+        'label': "Today's Classes",
+        'value': _todaysClasses.toString(),
+        'tone': null
+      },
+      {
+        'icon': Icons.inbox,
+        'label': 'Pending Leave',
+        'value': _pendingLeave.toString(),
+        'tone': Colors.orange
+      },
+      {
+        'icon': Icons.campaign,
+        'label': 'New Circulars',
+        'value': _newCircularsCount.toString(),
+        'tone': Colors.blueAccent
+      },
     ];
 
     return Column(
@@ -775,7 +920,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
             itemBuilder: (context, index) {
               final kpi = kpis[index];
               return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
                 child: _buildKpiCard(
                   icon: kpi['icon'] as IconData,
                   label: kpi['label'] as String,
@@ -797,7 +943,9 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
               width: isActive ? 20 : 8,
               height: 8,
               decoration: BoxDecoration(
-                color: isActive ? const Color(0xFF6C63FF) : Colors.grey.shade300,
+                color: isActive
+                    ? const Color(0xFF6C63FF)
+                    : Colors.grey.shade300,
                 borderRadius: BorderRadius.circular(8),
               ),
             );
@@ -814,7 +962,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
     required String value,
     Color? tone,
   }) {
-    final backgroundColor = tone != null ? tone.withOpacity(0.08) : Colors.grey.withOpacity(0.06);
+    final backgroundColor =
+        tone != null ? tone.withOpacity(0.08) : Colors.grey.withOpacity(0.06);
     final iconColor = tone ?? const Color(0xFF6C63FF);
     return Container(
       padding: const EdgeInsets.all(12),
@@ -839,7 +988,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
             children: [
               Text(
                 value,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                style:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
               ),
               const SizedBox(height: 4),
               Text(
@@ -856,14 +1006,47 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
   /// Builds the quick actions grid.
   Widget _buildQuickActionsCard() {
     final actions = [
-      {'label': 'Mark Attendance', 'icon': Icons.check_box_outlined, 'route': '/teacher/attendance'},
-      {'label': 'Timetable', 'icon': Icons.table_chart, 'route': '/teacher-timetable-display'},
-      {'label': 'Substitutions', 'icon': Icons.swap_horiz, 'route': '/teacher/substitutions'},
-      {'label': 'Substituted (me)', 'icon': Icons.person_off, 'route': '/teacher/substituted'},
+      {
+        'label': 'Mark Attendance',
+        'icon': Icons.check_box_outlined,
+        'route': '/teacher/attendance'
+      },
+      {
+        'label': 'Timetable',
+        'icon': Icons.table_chart,
+        'route': '/teacher-timetable-display'
+      },
+      {
+        'label': 'Substitutions',
+        'icon': Icons.swap_horiz,
+        'route': '/teacher/substitutions'
+      },
+      {
+        'label': 'Substituted (me)',
+        'icon': Icons.person_off,
+        'route': '/teacher/substituted'
+      },
       {'label': 'Circulars', 'icon': Icons.campaign, 'route': '/view-circulars'},
-      {'label': 'Manage Leave Requests', 'icon': Icons.beach_access, 'route': '/teacher/leave-requests'},
-      {'label': 'Digital Diary', 'icon': Icons.book, 'route': '/teacher/digital-diary'},
-      {'label': 'My Attendance', 'icon': Icons.calendar_today, 'route': '/my-attendance-calendar'},
+      {
+        'label': 'Manage Leave Requests',
+        'icon': Icons.beach_access,
+        'route': '/teacher/leave-requests'
+      },
+      {
+          'label': 'My Leave', // ✅ NEW TAB
+          'icon': Icons.event_note,
+          'route': '/teacher/my-leaves'
+        },
+      {
+        'label': 'Digital Diary',
+        'icon': Icons.book,
+        'route': '/teacher/digital-diary'
+      },
+      {
+        'label': 'My Attendance',
+        'icon': Icons.calendar_today,
+        'route': '/my-attendance-calendar'
+      },
     ];
 
     return Container(
@@ -884,18 +1067,21 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
         children: [
           Row(
             children: [
-              const Text('Quick Actions', style: TextStyle(fontWeight: FontWeight.bold)),
+              const Text('Quick Actions',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
               const Spacer(),
               TextButton(
                 onPressed: () {}, // Placeholder for expansion
-                child: const Text('Tap to open', style: TextStyle(fontSize: 12)),
+                child:
+                    const Text('Tap to open', style: TextStyle(fontSize: 12)),
               ),
             ],
           ),
           const SizedBox(height: 8),
           LayoutBuilder(
             builder: (context, constraints) {
-              final crossAxisCount = (constraints.maxWidth / 120).floor().clamp(2, 4);
+              final crossAxisCount =
+                  (constraints.maxWidth / 120).floor().clamp(2, 4);
               return GridView.builder(
                 physics: const NeverScrollableScrollPhysics(),
                 shrinkWrap: true,
@@ -925,7 +1111,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
       child: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(colors: [Color(0xFFF8FAFF), Color(0xFFFFFFFF)]),
+          gradient: const LinearGradient(
+              colors: [Color(0xFFF8FAFF), Color(0xFFFFFFFF)]),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: Colors.black.withOpacity(0.03)),
         ),
@@ -939,13 +1126,15 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                 color: const Color(0xFFF3F4FF),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(action['icon'] as IconData, color: const Color(0xFF6C63FF)),
+              child: Icon(action['icon'] as IconData,
+                  color: const Color(0xFF6C63FF)),
             ),
             const Spacer(),
             Expanded(
               child: Text(
                 action['label'] as String,
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                style:
+                    const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -978,6 +1167,12 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
         Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const TeacherDigitalDiaryScreen()),
+        );
+        break;
+      case '/teacher/my-leaves': // ✅ ADD THIS
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => TeacherMyLeaveRequestsScreen()),
         );
         break;
       default:
@@ -1042,13 +1237,15 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
       child: Column(
         children: [
           ListTile(
-            title: const Text("Today's Timetable", style: TextStyle(fontWeight: FontWeight.bold)),
+            title: const Text("Today's Timetable",
+                style: TextStyle(fontWeight: FontWeight.bold)),
             trailing: SizedBox(
               width: 96,
               child: TextButton(
                 onPressed: () => Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const TeacherTimetableDisplayScreen()),
+                  MaterialPageRoute(
+                      builder: (_) => const TeacherTimetableDisplayScreen()),
                 ),
                 child: const Text('See All'),
               ),
@@ -1071,20 +1268,28 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
     if (_todayClasses.isEmpty) {
       return const Padding(
         padding: EdgeInsets.all(16),
-        child: Text('No classes scheduled today.', style: TextStyle(color: Colors.black54)),
+        child: Text('No classes scheduled today.',
+            style: TextStyle(color: Colors.black54)),
       );
     }
     return Column(
-      children: _todayClasses.map((record) => _buildTimetableListTile(record)).toList(),
+      children:
+          _todayClasses.map((record) => _buildTimetableListTile(record)).toList(),
     );
   }
 
   /// Builds a list tile for a timetable entry.
   Widget _buildTimetableListTile(dynamic record) {
     final data = record is Map ? record : <String, dynamic>{};
-    final period = (data['Period']?['name'] ?? data['period_name'] ?? data['period'] ?? '-').toString();
-    final className = (data['Class']?['class_name'] ?? data['Class'] ?? data['class'] ?? '-').toString();
-    final subject = (data['Subject']?['name'] ?? data['Subject'] ?? data['subject'] ?? '-').toString();
+    final period =
+        (data['Period']?['name'] ?? data['period_name'] ?? data['period'] ?? '-')
+            .toString();
+    final className =
+        (data['Class']?['class_name'] ?? data['Class'] ?? data['class'] ?? '-')
+            .toString();
+    final subject =
+        (data['Subject']?['name'] ?? data['Subject'] ?? data['subject'] ?? '-')
+            .toString();
     final room = (data['room'] ?? data['room_no'] ?? '-').toString();
     return ListTile(
       leading: const CircleAvatar(
@@ -1121,7 +1326,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
           Row(
             children: [
               const Expanded(
-                child: Text('Attendance (Today)', style: TextStyle(fontWeight: FontWeight.bold)),
+                child: Text('Attendance (Today)',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
               ),
               SizedBox(
                 width: 110,
@@ -1142,7 +1348,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
   /// Builds the attendance status row.
   Widget _buildAttendanceStatus() {
     if (_attendanceMarked == null) {
-      return const Text('Checking attendance status…', style: TextStyle(color: Colors.black54));
+      return const Text('Checking attendance status…',
+          style: TextStyle(color: Colors.black54));
     }
     if (_attendanceMarked == true) {
       return const Row(
@@ -1162,7 +1369,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
         ],
       );
     }
-    return const Text('You are not an incharge for any class.', style: TextStyle(color: Colors.black54));
+    return const Text('You are not an incharge for any class.',
+        style: TextStyle(color: Colors.black54));
   }
 
   /// Builds the substitutions card.
@@ -1186,7 +1394,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
           Row(
             children: [
               const Expanded(
-                child: Text('My Substitutions (Today)', style: TextStyle(fontWeight: FontWeight.bold)),
+                child: Text('My Substitutions (Today)',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
               ),
               SizedBox(
                 width: 96,
@@ -1210,19 +1419,26 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
           if (_substitutionsTook.isNotEmpty || _substitutionsFreed.isNotEmpty)
             Column(
               children: [
-                ..._substitutionsTook.take(3).map((s) => _buildSubstitutionText(s, isCovering: true, isSubstituted: false)),
+                ..._substitutionsTook
+                    .take(3)
+                    .map((s) => _buildSubstitutionText(s,
+                        isCovering: true, isSubstituted: false)),
                 if (_substitutionsTook.isNotEmpty && _substitutionsFreed.isNotEmpty)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 4),
                     child: Divider(),
                   ),
-                ..._substitutionsFreed.take(3).map((s) => _buildSubstitutionText(s, isCovering: false, isSubstituted: false)),
+                ..._substitutionsFreed
+                    .take(3)
+                    .map((s) => _buildSubstitutionText(s,
+                        isCovering: false, isSubstituted: false)),
               ],
             )
           else
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 6),
-              child: Text('No substitutions today.', style: TextStyle(color: Colors.black54)),
+              child: Text('No substitutions today.',
+                  style: TextStyle(color: Colors.black54)),
             ),
         ],
       ),
@@ -1250,7 +1466,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
           Row(
             children: [
               const Expanded(
-                child: Text('I\'ve been Substituted (Today)', style: TextStyle(fontWeight: FontWeight.bold)),
+                child: Text("I've been Substituted (Today)",
+                    style: TextStyle(fontWeight: FontWeight.bold)),
               ),
               SizedBox(
                 width: 120,
@@ -1272,12 +1489,17 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
           const SizedBox(height: 8),
           if (_substitutionsFreed.isNotEmpty)
             Column(
-              children: _substitutionsFreed.take(3).map((s) => _buildSubstitutionText(s, isCovering: false, isSubstituted: true)).toList(),
+              children: _substitutionsFreed
+                  .take(3)
+                  .map((s) => _buildSubstitutionText(s,
+                      isCovering: false, isSubstituted: true))
+                  .toList(),
             )
           else
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 6),
-              child: Text('No one has substituted you today.', style: TextStyle(color: Colors.black54)),
+              child: Text('No one has substituted you today.',
+                  style: TextStyle(color: Colors.black54)),
             ),
         ],
       ),
@@ -1285,15 +1507,20 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
   }
 
   /// Builds text for a substitution entry.
-  Widget _buildSubstitutionText(dynamic sub, {required bool isCovering, required bool isSubstituted}) {
+  Widget _buildSubstitutionText(dynamic sub,
+      {required bool isCovering, required bool isSubstituted}) {
     final data = sub is Map ? sub : <String, dynamic>{};
-    final className = (data['Class']?['class_name'] ?? data['class'] ?? data['className'] ?? '-').toString();
-    final subject = (data['Subject']?['name'] ?? data['subject'] ?? '-').toString();
+    final className =
+        (data['Class']?['class_name'] ?? data['class'] ?? data['className'] ?? '-')
+            .toString();
+    final subject =
+        (data['Subject']?['name'] ?? data['subject'] ?? '-').toString();
     final prefix = isSubstituted ? 'Substituted' : (isCovering ? 'Covering' : 'Freed');
     final coveredBy = isSubstituted
         ? ((data['Teacher'] is Map
-            ? data['Teacher']['name'] ?? ''
-            : (data['coveredBy'] ?? data['covered_by'] ?? '')).toString())
+                    ? data['Teacher']['name'] ?? ''
+                    : (data['coveredBy'] ?? data['covered_by'] ?? ''))
+                .toString())
         : '';
     final text = '$prefix $className — $subject${coveredBy.isNotEmpty ? ' by $coveredBy' : ''}';
     return Align(
@@ -1319,7 +1546,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
       child: Column(
         children: [
           ListTile(
-            title: const Text('Recent Digital Diaries', style: TextStyle(fontWeight: FontWeight.bold)),
+            title: const Text('Recent Digital Diaries',
+                style: TextStyle(fontWeight: FontWeight.bold)),
             trailing: const SizedBox(width: 116), // Placeholder
           ),
           _buildDiariesContent(),
@@ -1345,7 +1573,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
     if (_recentDiaries.isEmpty) {
       return const Padding(
         padding: EdgeInsets.all(16),
-        child: Text('No diary notes yet.', style: TextStyle(color: Colors.black54)),
+        child:
+            Text('No diary notes yet.', style: TextStyle(color: Colors.black54)),
       );
     }
     return SizedBox(
@@ -1356,7 +1585,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
           final diary = _recentDiaries[index];
           final title = diary['title'] ?? diary['subjectName'] ?? '';
           final content = (diary['content'] ?? '').toString();
-          final dateString = diary['date']?.toString() ?? diary['createdAt']?.toString() ?? '';
+          final dateString =
+              diary['date']?.toString() ?? diary['createdAt']?.toString() ?? '';
           return ListTile(
             onTap: () {}, // Placeholder
             title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
@@ -1388,7 +1618,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
       child: Column(
         children: [
           ListTile(
-            title: const Text('Recent Circulars', style: TextStyle(fontWeight: FontWeight.bold)),
+            title: const Text('Recent Circulars',
+                style: TextStyle(fontWeight: FontWeight.bold)),
             trailing: SizedBox(
               width: 96,
               child: TextButton(
@@ -1411,7 +1642,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
     if (_recentCirculars.isEmpty) {
       return const Padding(
         padding: EdgeInsets.all(16),
-        child: Text('No circulars yet.', style: TextStyle(color: Colors.black54)),
+        child:
+            Text('No circulars yet.', style: TextStyle(color: Colors.black54)),
       );
     }
     return Column(
@@ -1455,7 +1687,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
       child: Column(
         children: [
           ListTile(
-            title: const Text('🧩 Co-Scholastic Entry', style: TextStyle(fontWeight: FontWeight.bold)),
+            title: const Text('🧩 Co-Scholastic Entry',
+                style: TextStyle(fontWeight: FontWeight.bold)),
             trailing: SizedBox(
               width: 40,
               child: IconButton(
@@ -1494,7 +1727,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
       child: Column(
         children: [
           ListTile(
-            title: const Text('📝 Student Remarks Entry', style: TextStyle(fontWeight: FontWeight.bold)),
+            title: const Text('📝 Student Remarks Entry',
+                style: TextStyle(fontWeight: FontWeight.bold)),
             trailing: SizedBox(
               width: 40,
               child: IconButton(
