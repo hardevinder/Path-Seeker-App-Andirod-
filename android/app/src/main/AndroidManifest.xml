@@ -12,7 +12,6 @@
     <!-- ================================================= -->
     <!-- ❌ FORCE REMOVE ALL AUDIO PERMISSIONS COMPLETELY -->
     <!-- ================================================= -->
-
     <uses-permission
         android:name="android.permission.RECORD_AUDIO"
         tools:node="remove" />
@@ -32,8 +31,6 @@
     <!-- ================================================= -->
     <!-- ❌ FORCE REMOVE STORAGE / MEDIA PERMISSIONS -->
     <!-- ================================================= -->
-
-    <!-- Legacy storage (KEEP ONLY ONCE EACH) -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         tools:node="remove" />
@@ -42,7 +39,6 @@
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         tools:node="remove" />
 
-    <!-- Android 13+ media -->
     <uses-permission
         android:name="android.permission.READ_MEDIA_IMAGES"
         tools:node="remove" />
@@ -53,12 +49,10 @@
         android:name="android.permission.READ_MEDIA_AUDIO"
         tools:node="remove" />
 
-    <!-- Android 14+ picker permission -->
     <uses-permission
         android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED"
         tools:node="remove" />
 
-    <!-- All files access -->
     <uses-permission
         android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
         tools:node="remove" />
@@ -72,6 +66,11 @@
         android:icon="@mipmap/ic_launcher"
         tools:targetApi="33"
         tools:ignore="GoogleAppIndexingWarning">
+
+        <!-- ✅ HDFC / Juspay HyperSDK Client ID -->
+        <meta-data
+            android:name="juspay_client_id"
+            android:value="@string/juspay_client_id" />
 
         <activity
             android:name=".MainActivity"

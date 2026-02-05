@@ -32,8 +32,18 @@ class _StudentTimetableScreenState extends State<StudentTimetableScreen> {
   String activeStudentAdmission = '';
   String loggedInAdmission = '';
 
+  // ✅ NEW: active classId for correct holiday filtering
+  dynamic activeClassId;
+
   // Week state
-  final List<String> days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  final List<String> days = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday"
+  ];
   late DateTime currentMonday;
   int mobileOpenIdx = 0;
   bool showNoMatchHint = false;
@@ -45,41 +55,12 @@ class _StudentTimetableScreenState extends State<StudentTimetableScreen> {
     _loadRolesAndFamily().then((_) => _loadAll());
   }
 
-  // ------------------ Role + Family Logic ------------------
-  Future<void> _loadRolesAndFamily() async {
-    final prefs = await SharedPreferences.getInstance();
-    token = prefs.getString('authToken');
+  // ------------------ Helpers ------------------
+  String _normalizeAdmission(String s) =>
+      s.replaceAll("/", "-").trim(); // ✅ matches your React logic
 
-    // Load roles
-    try {
-      final stored = prefs.getString('roles');
-      if (stored != null) {
-        roles = (json.decode(stored) as List).map((e) => e.toString().toLowerCase()).toList();
-      } else {
-        final single = prefs.getString('userRole');
-        if (single != null) roles = [single.toLowerCase()];
-      }
-    } catch (_) {}
-
-    isStudent = roles.contains('student');
-    isParent = roles.contains('parent');
-    canSeeStudentSwitcher = isStudent || isParent;
-
-    // Family info
-    try {
-      final rawFamily = prefs.getString('family');
-      family = rawFamily != null ? json.decode(rawFamily) : null;
-    } catch (_) {}
-
-    activeStudentAdmission = prefs.getString('activeStudentAdmission') ??
-        prefs.getString('username') ??
-        '';
-    loggedInAdmission = prefs.getString('username') ?? '';
-  }
-
-  // ------------------ Core Helpers ------------------
   DateTime _computeCurrentMonday(DateTime forDate) {
-    final dayIndex = (forDate.weekday + 6) % 7;
+    final dayIndex = (forDate.weekday + 6) % 7; // Monday = 0
     return DateTime(forDate.year, forDate.month, forDate.day - dayIndex);
   }
 
@@ -90,22 +71,129 @@ class _StudentTimetableScreenState extends State<StudentTimetableScreen> {
     return '$y-$m-$day';
   }
 
-  Future<String> _resolveTimetableUrl() async {
-    if (!isStudent || (activeStudentAdmission.isNotEmpty && activeStudentAdmission != loggedInAdmission)) {
-      final adm = Uri.encodeComponent(activeStudentAdmission);
-      return '$baseUrl/period-class-teacher-subject/timetable/by-admission/$adm';
-    } else {
-      return '$baseUrl/period-class-teacher-subject/student/timetable';
-    }
-  }
-
   Map<String, String> _weekDatesMap() {
     final map = <String, String>{};
     for (var i = 0; i < days.length; i++) {
-      final d = DateTime(currentMonday.year, currentMonday.month, currentMonday.day + i);
+      final d = DateTime(currentMonday.year, currentMonday.month,
+          currentMonday.day + i);
       map[days[i]] = _formatDateYmd(d);
     }
     return map;
+  }
+
+  // ✅ NEW: compute active classId from family + active admission
+  void _computeActiveClassId() {
+    activeClassId = null;
+
+    if (family == null) return;
+    final active = _normalizeAdmission(activeStudentAdmission);
+
+    final candidates = <Map<String, dynamic>>[];
+    if (family?['student'] != null) {
+      candidates.add(Map<String, dynamic>.from(family!['student']));
+    }
+    for (final s in (family?['siblings'] ?? [])) {
+      if (s is Map) candidates.add(Map<String, dynamic>.from(s));
+    }
+
+    Map<String, dynamic>? activeStudent;
+    for (final s in candidates) {
+      final adm = _normalizeAdmission((s['admission_number'] ?? '').toString());
+      if (adm == active) {
+        activeStudent = s;
+        break;
+      }
+    }
+
+    if (activeStudent == null) return;
+
+    // Try multiple shapes
+    activeClassId = activeStudent['classId'] ??
+        activeStudent['class_id'] ??
+        (activeStudent['class'] is Map ? activeStudent['class']['id'] : null);
+  }
+
+  // ✅ NEW: holiday lookup by date + classId
+  dynamic _holidayForDate(String dateYmd) {
+    if (activeClassId == null) return null;
+    for (final h in holidays) {
+      if (h is! Map) continue;
+      final hDate = (h['date'] ?? '').toString();
+      final hClassId = h['classId'] ?? (h['class'] is Map ? h['class']['id'] : null);
+      if (hDate == dateYmd && hClassId == activeClassId) return h;
+    }
+    return null;
+  }
+
+  String _periodTitle(dynamic p) {
+    if (p is Map) {
+      return (p['period_name'] ?? p['name'] ?? 'Period').toString();
+    }
+    return p?.toString() ?? 'Period';
+  }
+
+  String _periodTimes(dynamic p) {
+    if (p is Map && p['start_time'] != null && p['end_time'] != null) {
+      return '${p['start_time']}-${p['end_time']}';
+    }
+    return '';
+  }
+
+  dynamic _periodId(dynamic p) {
+    if (p is Map) return p['id'] ?? p['periodId'] ?? p['period_id'];
+    return p;
+  }
+
+  // ------------------ Role + Family Logic ------------------
+  Future<void> _loadRolesAndFamily() async {
+    final prefs = await SharedPreferences.getInstance();
+    token = prefs.getString('authToken');
+
+    // roles
+    try {
+      final stored = prefs.getString('roles');
+      if (stored != null) {
+        roles = (json.decode(stored) as List)
+            .map((e) => e.toString().toLowerCase())
+            .toList();
+      } else {
+        final single = prefs.getString('userRole');
+        if (single != null) roles = [single.toLowerCase()];
+      }
+    } catch (_) {}
+
+    isStudent = roles.contains('student');
+    isParent = roles.contains('parent');
+    canSeeStudentSwitcher = isStudent || isParent;
+
+    // family
+    try {
+      final rawFamily = prefs.getString('family');
+      family = rawFamily != null ? json.decode(rawFamily) : null;
+    } catch (_) {}
+
+    activeStudentAdmission = prefs.getString('activeStudentAdmission') ??
+        prefs.getString('username') ??
+        '';
+    loggedInAdmission = prefs.getString('username') ?? '';
+
+    // normalize admission like web
+    activeStudentAdmission = _normalizeAdmission(activeStudentAdmission);
+    loggedInAdmission = _normalizeAdmission(loggedInAdmission);
+
+    _computeActiveClassId(); // ✅ important
+  }
+
+  Future<String> _resolveTimetableUrl() async {
+    final active = _normalizeAdmission(activeStudentAdmission);
+    final logged = _normalizeAdmission(loggedInAdmission);
+
+    // ✅ If parent OR switched student => by-admission
+    if (!isStudent || (active.isNotEmpty && active != logged)) {
+      final adm = Uri.encodeComponent(active);
+      return '$baseUrl/period-class-teacher-subject/timetable/by-admission/$adm';
+    }
+    return '$baseUrl/period-class-teacher-subject/student/timetable';
   }
 
   // ------------------ API Calls ------------------
@@ -119,12 +207,31 @@ class _StudentTimetableScreenState extends State<StudentTimetableScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       token = prefs.getString('authToken');
+
+      // refresh these (in case switch happened)
+      activeStudentAdmission = _normalizeAdmission(
+          prefs.getString('activeStudentAdmission') ??
+              prefs.getString('username') ??
+              '');
+      loggedInAdmission =
+          _normalizeAdmission(prefs.getString('username') ?? '');
+
+      // refresh family too
+      try {
+        final rawFamily = prefs.getString('family');
+        family = rawFamily != null ? json.decode(rawFamily) : family;
+      } catch (_) {}
+      _computeActiveClassId();
+
       if (baseUrl.isEmpty || token == null) {
         setState(() => isLoading = false);
         return;
       }
 
-      final headers = {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'};
+      final headers = {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json'
+      };
       final timetableUrl = await _resolveTimetableUrl();
 
       final responses = await Future.wait([
@@ -135,11 +242,12 @@ class _StudentTimetableScreenState extends State<StudentTimetableScreen> {
 
       // periods
       final pRes = responses[0];
-      periods = (pRes.statusCode == 200)
-          ? (json.decode(pRes.body) is List
-              ? json.decode(pRes.body)
-              : (json.decode(pRes.body)['periods'] ?? []))
-          : [];
+      if (pRes.statusCode == 200) {
+        final decoded = json.decode(pRes.body);
+        periods = decoded is List ? decoded : (decoded['periods'] ?? []);
+      } else {
+        periods = [];
+      }
 
       // timetable
       final tRes = responses[1];
@@ -149,6 +257,8 @@ class _StudentTimetableScreenState extends State<StudentTimetableScreen> {
           timetable = parsed;
         } else if (parsed is Map) {
           timetable = parsed['timetable'] ?? parsed['data'] ?? [];
+        } else {
+          timetable = [];
         }
       } else {
         timetable = [];
@@ -156,17 +266,21 @@ class _StudentTimetableScreenState extends State<StudentTimetableScreen> {
 
       // holidays
       final hRes = responses[2];
-      holidays = (hRes.statusCode == 200)
-          ? (json.decode(hRes.body) is List
-              ? json.decode(hRes.body)
-              : (json.decode(hRes.body)['holidays'] ?? []))
-          : [];
+      if (hRes.statusCode == 200) {
+        final decoded = json.decode(hRes.body);
+        holidays = decoded is List ? decoded : (decoded['holidays'] ?? []);
+      } else {
+        holidays = [];
+      }
 
       await _fetchSubsForWeek(token!);
       _buildGrid();
 
+      // today open on mobile
       final todayStr = _formatDateYmd(DateTime.now());
-      final idx = days.indexWhere((d) => _weekDatesMap()[d] == todayStr);
+      final weekMap = _weekDatesMap();
+      final idx = days.indexWhere((d) => weekMap[d] == todayStr);
+
       setState(() {
         mobileOpenIdx = idx >= 0 ? idx : 0;
         isLoading = false;
@@ -182,31 +296,40 @@ class _StudentTimetableScreenState extends State<StudentTimetableScreen> {
 
   Future<void> _fetchSubsForWeek(String token) async {
     final subs = <String, List<dynamic>>{};
-    final headers = {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'};
-    final dates = List.generate(
-        days.length, (i) => _formatDateYmd(DateTime(currentMonday.year, currentMonday.month, currentMonday.day + i)));
+    final headers = {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json'
+    };
+
+    final dates = List.generate(days.length, (i) {
+      final d = DateTime(
+          currentMonday.year, currentMonday.month, currentMonday.day + i);
+      return _formatDateYmd(d);
+    });
 
     await Future.wait(dates.map((date) async {
       try {
-        final res =
-            await http.get(Uri.parse('$baseUrl/substitutions/by-date/student?date=$date'), headers: headers);
-        subs[date] =
-            (res.statusCode == 200) ? (json.decode(res.body) as List? ?? []) : [];
+        final res = await http.get(
+          Uri.parse('$baseUrl/substitutions/by-date/student?date=$date'),
+          headers: headers,
+        );
+        final decoded = res.statusCode == 200 ? json.decode(res.body) : [];
+        subs[date] = decoded is List ? decoded : [];
       } catch (_) {
         subs[date] = [];
       }
     }));
 
-    setState(() => studentSubs = subs);
+    if (mounted) setState(() => studentSubs = subs);
   }
 
   // ------------------ Grid Builder ------------------
   void _buildGrid() {
     final newGrid = <String, Map<dynamic, List<dynamic>>>{};
-    final periodIds = <dynamic>[];
 
+    final periodIds = <dynamic>[];
     for (final p in periods) {
-      final pid = (p is Map) ? (p['id'] ?? p['periodId'] ?? p['period_id']) : p;
+      final pid = _periodId(p);
       if (pid != null) periodIds.add(pid);
     }
 
@@ -221,8 +344,13 @@ class _StudentTimetableScreenState extends State<StudentTimetableScreen> {
       if (rec is! Map) continue;
       final pid = rec['periodId'] ?? rec['period_id'];
       final rawDay = rec['day'] ?? rec['Day'];
+      final raw = rawDay?.toString() ?? '';
+
       final dayNorm = days.firstWhere(
-          (d) => d.toLowerCase() == rawDay.toString().toLowerCase(), orElse: () => '');
+        (d) => d.toLowerCase() == raw.toLowerCase(),
+        orElse: () => '',
+      );
+
       if (dayNorm.isNotEmpty && pid != null) {
         newGrid[dayNorm]?[pid]?.add(rec);
       }
@@ -234,25 +362,31 @@ class _StudentTimetableScreenState extends State<StudentTimetableScreen> {
   // ------------------ Student Switcher ------------------
   Future<void> _handleStudentSwitch(String admissionNumber) async {
     final prefs = await SharedPreferences.getInstance();
-    if (admissionNumber == activeStudentAdmission) return;
-    await prefs.setString('activeStudentAdmission', admissionNumber);
-    setState(() => activeStudentAdmission = admissionNumber);
+    final adm = _normalizeAdmission(admissionNumber);
+    if (adm == activeStudentAdmission) return;
+
+    await prefs.setString('activeStudentAdmission', adm);
+    setState(() => activeStudentAdmission = adm);
+
+    _computeActiveClassId();
     await _loadAll();
   }
 
   List<Widget> _buildStudentSwitcherButtons() {
     final students = <Map<String, dynamic>>[];
-    if (family?['student'] != null) students.add({...family!['student'], 'isSelf': true});
+    if (family?['student'] != null) {
+      students.add({...family!['student'], 'isSelf': true});
+    }
     for (final s in (family?['siblings'] ?? [])) {
-      students.add({...s, 'isSelf': false});
+      if (s is Map) students.add({...s, 'isSelf': false});
     }
 
     return students.map((s) {
-      final adm = (s['admission_number'] ?? '').toString();
+      final adm = _normalizeAdmission((s['admission_number'] ?? '').toString());
       final isActive = adm == activeStudentAdmission;
       final label = s['isSelf'] == true ? 'Me' : (s['name'] ?? 'Unknown');
-      final classInfo = s['class']?['name'] != null
-          ? ' · ${s['class']['name']}-${s['section']?['name'] ?? '—'}'
+      final classInfo = (s['class'] is Map && s['class']['name'] != null)
+          ? ' · ${s['class']['name']}-${(s['section'] is Map ? s['section']['name'] : null) ?? '—'}'
           : '';
 
       return Padding(
@@ -262,9 +396,12 @@ class _StudentTimetableScreenState extends State<StudentTimetableScreen> {
           style: ElevatedButton.styleFrom(
             elevation: 0,
             backgroundColor: isActive ? Colors.amber.shade400 : Colors.white,
-            foregroundColor: isActive ? Colors.black : Colors.blueGrey.shade700,
+            foregroundColor:
+                isActive ? Colors.black : Colors.blueGrey.shade700,
             side: BorderSide(
-                color: isActive ? Colors.amber : Colors.grey.shade300, width: 1),
+              color: isActive ? Colors.amber : Colors.grey.shade300,
+              width: 1,
+            ),
             shape: const StadiumBorder(),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           ),
@@ -282,10 +419,15 @@ class _StudentTimetableScreenState extends State<StudentTimetableScreen> {
   @override
   Widget build(BuildContext context) {
     final weekMap = _weekDatesMap();
-    final weekRangeText = '${weekMap[days.first] ?? ''} — ${weekMap[days.last] ?? ''}';
+    final weekRangeText =
+        '${weekMap[days.first] ?? ''} — ${weekMap[days.last] ?? ''}';
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Time Table'), centerTitle: true, elevation: 3),
+      appBar: AppBar(
+        title: const Text('Time Table'),
+        centerTitle: true,
+        elevation: 3,
+      ),
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _loadAll,
@@ -294,53 +436,73 @@ class _StudentTimetableScreenState extends State<StudentTimetableScreen> {
               : ListView(
                   padding: const EdgeInsets.all(12),
                   children: [
-                    // 🔸 Header Card (with switcher)
                     Card(
                       elevation: 2,
                       margin: EdgeInsets.zero,
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 12),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              mainAxisAlignment:
+                                  MainAxisAlignment.spaceBetween,
                               children: [
                                 Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      const Text('My Timetable',
-                                          style: TextStyle(
-                                              fontSize: 18,
-                                              fontWeight: FontWeight.w800)),
-                                      const SizedBox(height: 4),
-                                      Text('Week: $weekRangeText',
-                                          style: TextStyle(
-                                              color: Colors.grey.shade600)),
-                                    ]),
-                                Row(children: [
-                                  TextButton(
-                                      onPressed: () => setState(() {
-                                            currentMonday =
-                                                currentMonday.subtract(const Duration(days: 7));
-                                            _loadAll();
-                                          }),
-                                      child: const Text('‹ Prev')),
-                                  OutlinedButton(
-                                      onPressed: () => setState(() {
-                                            currentMonday =
-                                                _computeCurrentMonday(DateTime.now());
-                                            _loadAll();
-                                          }),
-                                      child: const Text('This Week')),
-                                  TextButton(
-                                      onPressed: () => setState(() {
-                                            currentMonday =
-                                                currentMonday.add(const Duration(days: 7));
-                                            _loadAll();
-                                          }),
-                                      child: const Text('Next ›')),
-                                ])
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'My Timetable',
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Week: $weekRangeText',
+                                      style: TextStyle(
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Row(
+                                  children: [
+                                    TextButton(
+                                      onPressed: () async {
+                                        setState(() {
+                                          currentMonday = currentMonday
+                                              .subtract(const Duration(days: 7));
+                                        });
+                                        await _loadAll();
+                                      },
+                                      child: const Text('‹ Prev'),
+                                    ),
+                                    OutlinedButton(
+                                      onPressed: () async {
+                                        setState(() {
+                                          currentMonday = _computeCurrentMonday(
+                                              DateTime.now());
+                                        });
+                                        await _loadAll();
+                                      },
+                                      child: const Text('This Week'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () async {
+                                        setState(() {
+                                          currentMonday =
+                                              currentMonday.add(const Duration(days: 7));
+                                        });
+                                        await _loadAll();
+                                      },
+                                      child: const Text('Next ›'),
+                                    ),
+                                  ],
+                                ),
                               ],
                             ),
                             if (canSeeStudentSwitcher &&
@@ -359,21 +521,23 @@ class _StudentTimetableScreenState extends State<StudentTimetableScreen> {
                         ),
                       ),
                     ),
-
                     const SizedBox(height: 12),
                     Wrap(spacing: 8, runSpacing: 6, children: [
                       Chip(
-                          backgroundColor: Colors.blue.shade50,
-                          label: const Text('Today')),
+                        backgroundColor: Colors.blue.shade50,
+                        label: const Text('Today'),
+                      ),
                       Chip(
-                          backgroundColor: Colors.red.shade50,
-                          label: const Text('Holiday')),
+                        backgroundColor: Colors.red.shade50,
+                        label: const Text('Holiday'),
+                      ),
                       Chip(
-                          backgroundColor: Colors.teal.shade50,
-                          label: const Text('Substitution')),
+                        backgroundColor: Colors.teal.shade50,
+                        label: const Text('Substitution'),
+                      ),
                     ]),
                     const SizedBox(height: 12),
-                    // Desktop vs Mobile view
+
                     Builder(builder: (ctx) {
                       final width = MediaQuery.of(ctx).size.width;
                       if (width >= 800) {
@@ -382,14 +546,16 @@ class _StudentTimetableScreenState extends State<StudentTimetableScreen> {
                         return _buildMobileList();
                       }
                     }),
+
                     const SizedBox(height: 20),
                     if (showNoMatchHint)
                       Container(
                         padding: const EdgeInsets.all(12),
                         margin: const EdgeInsets.only(top: 8),
                         decoration: BoxDecoration(
-                            color: Colors.yellow.shade50,
-                            borderRadius: BorderRadius.circular(8)),
+                          color: Colors.yellow.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                         child: const Text(
                           'Hint: timetable items received but none matched configured periods.',
                           style: TextStyle(color: Colors.black87),
@@ -402,10 +568,11 @@ class _StudentTimetableScreenState extends State<StudentTimetableScreen> {
     );
   }
 
-  // ------------------ Table + Mobile Accordion ------------------
+  // ------------------ Desktop ------------------
   Widget _buildDesktopTable(BuildContext context) {
     final weekMap = _weekDatesMap();
     final cellBase = const BoxConstraints(minWidth: 140, minHeight: 72);
+
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
@@ -414,27 +581,24 @@ class _StudentTimetableScreenState extends State<StudentTimetableScreen> {
         columns: [
           const DataColumn(label: SizedBox(width: 200, child: Text('Day'))),
           ...periods.map((p) {
-            final title = (p is Map)
-                ? (p['period_name'] ?? p['name'] ?? '')
-                : p.toString();
-            final times = (p is Map &&
-                    p['start_time'] != null &&
-                    p['end_time'] != null)
-                ? '${p['start_time']}-${p['end_time']}'
-                : '';
             return DataColumn(
               label: ConstrainedBox(
                 constraints: cellBase,
                 child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(title,
-                          style: const TextStyle(fontWeight: FontWeight.w700)),
-                      if (times.isNotEmpty)
-                        Text(times,
-                            style: TextStyle(
-                                color: Colors.grey.shade600, fontSize: 12)),
-                    ]),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _periodTitle(p),
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    if (_periodTimes(p).isNotEmpty)
+                      Text(
+                        _periodTimes(p),
+                        style:
+                            TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                      ),
+                  ],
+                ),
               ),
             );
           }).toList(),
@@ -443,63 +607,86 @@ class _StudentTimetableScreenState extends State<StudentTimetableScreen> {
           final date = weekMap[day] ?? '';
           final subs = studentSubs[date] ?? [];
           final isToday = date == _formatDateYmd(DateTime.now());
-          final holiday =
-              holidays.firstWhere((h) => h['date'] == date, orElse: () => null);
+
+          // ✅ FIX: holiday by classId
+          final holiday = _holidayForDate(date);
 
           if (holiday != null) {
-            return DataRow(cells: [
+            // ✅ safer: exactly periods.length cells
+            final cells = <DataCell>[
               DataCell(Text('$day (${holiday['description'] ?? 'Holiday'})')),
-              DataCell(Text('Holiday')),
-              ...List.generate(periods.length - 1, (_) => const DataCell(SizedBox()))
-            ]);
+              ...List.generate(
+                periods.length,
+                (_) => const DataCell(Text('Holiday')),
+              ),
+            ];
+            return DataRow(
+              color: MaterialStateProperty.all(Colors.red.withOpacity(.06)),
+              cells: cells,
+            );
           }
 
           return DataRow(
-            color:
-                isToday ? MaterialStateProperty.all(Colors.blue.withOpacity(.05)) : null,
+            color: isToday
+                ? MaterialStateProperty.all(Colors.blue.withOpacity(.05))
+                : null,
             cells: [
               DataCell(Text(day)),
               ...periods.map((p) {
-                final pid =
-                    (p is Map) ? (p['id'] ?? p['periodId'] ?? p['period_id']) : p;
-                final subsForPeriod = subs.where((s) =>
-                    (s['periodId'] == pid) ||
-                    (s['period_id'] == pid) ||
-                    (s['periodId']?.toString() == pid?.toString())).toList();
+                final pid = _periodId(p);
+
+                final subsForPeriod = subs.where((s) {
+                  if (s is! Map) return false;
+                  final spid = s['periodId'] ?? s['period_id'];
+                  return spid?.toString() == pid?.toString() &&
+                      (s['day']?.toString().toLowerCase() ?? '') ==
+                          day.toLowerCase();
+                }).toList();
 
                 if (subsForPeriod.isNotEmpty) {
-                  final s = subsForPeriod.first;
-                  return DataCell(Column(
+                  final s = subsForPeriod.first as Map;
+                  return DataCell(
+                    Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text('Substitution',
                             style: TextStyle(fontWeight: FontWeight.w700)),
-                        Text(s['Subject']?['name'] ?? ''),
-                        Text(s['Teacher']?['name'] ?? '',
-                            style: TextStyle(color: Colors.grey.shade700))
-                      ]));
+                        Text((s['Subject'] is Map ? s['Subject']['name'] : '')?.toString() ?? ''),
+                        Text(
+                          (s['Teacher'] is Map ? s['Teacher']['name'] : '')?.toString() ?? '',
+                          style: TextStyle(color: Colors.grey.shade700),
+                        ),
+                      ],
+                    ),
+                  );
                 }
 
                 final recs = grid[day]?[pid] ?? [];
-                if (recs.isEmpty) {
-                  return const DataCell(Text('—'));
-                }
-                return DataCell(Column(
+                if (recs.isEmpty) return const DataCell(Text('—'));
+
+                return DataCell(
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: recs.map<Widget>((r) {
+                      if (r is! Map) return const SizedBox.shrink();
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 6),
                         child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(r['Subject']?['name'] ?? ''),
-                              Text(r['Teacher']?['name'] ?? '',
-                                  style: TextStyle(
-                                      color: Colors.grey.shade700, fontSize: 12))
-                            ]),
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text((r['Subject'] is Map ? r['Subject']['name'] : '')?.toString() ?? ''),
+                            Text(
+                              (r['Teacher'] is Map ? r['Teacher']['name'] : '')?.toString() ?? '',
+                              style: TextStyle(
+                                  color: Colors.grey.shade700, fontSize: 12),
+                            ),
+                          ],
+                        ),
                       );
-                    }).toList()));
-              }).toList()
+                    }).toList(),
+                  ),
+                );
+              }).toList(),
             ],
           );
         }).toList(),
@@ -507,16 +694,21 @@ class _StudentTimetableScreenState extends State<StudentTimetableScreen> {
     );
   }
 
+  // ------------------ Mobile (Accordion) ------------------
   Widget _buildMobileList() {
     final weekMap = _weekDatesMap();
+
     return ExpansionPanelList.radio(
+      // ✅ FIX: open “Today” by default
+      initialOpenPanelValue: mobileOpenIdx,
       children: days.asMap().entries.map((entry) {
         final idx = entry.key;
         final day = entry.value;
         final date = weekMap[day] ?? '';
         final subs = studentSubs[date] ?? [];
-        final holiday =
-            holidays.firstWhere((h) => h['date'] == date, orElse: () => null);
+
+        // ✅ FIX: holiday by classId
+        final holiday = _holidayForDate(date);
 
         return ExpansionPanelRadio(
           value: idx,
@@ -529,33 +721,39 @@ class _StudentTimetableScreenState extends State<StudentTimetableScreen> {
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                        color: Colors.red.shade50,
-                        borderRadius: BorderRadius.circular(8)),
-                    child: Text(holiday['description'] ?? 'Holiday'),
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text((holiday['description'] ?? 'Holiday').toString()),
                   )
                 : Column(
                     children: periods.map((p) {
-                      final pid = (p is Map)
-                          ? (p['id'] ?? p['periodId'] ?? p['period_id'])
-                          : p;
-                      final subsForPeriod = subs.where((s) =>
-                          (s['periodId'] == pid) ||
-                          (s['period_id'] == pid) ||
-                          (s['periodId']?.toString() == pid?.toString())).toList();
+                      final pid = _periodId(p);
+                      final title = _periodTitle(p);
+
+                      final subsForPeriod = subs.where((s) {
+                        if (s is! Map) return false;
+                        final spid = s['periodId'] ?? s['period_id'];
+                        final sday = (s['day'] ?? '').toString().toLowerCase();
+                        return spid?.toString() == pid?.toString() &&
+                            sday == day.toLowerCase();
+                      }).toList();
+
                       if (subsForPeriod.isNotEmpty) {
-                        final s = subsForPeriod.first;
+                        final s = subsForPeriod.first as Map;
                         return Card(
                           child: ListTile(
-                            title:
-                                Text(p['period_name'] ?? p['name'] ?? 'Period'),
+                            title: Text(title),
                             subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('Substitution: ${s['Subject']?['name'] ?? ''}',
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.w600)),
-                                  Text(s['Teacher']?['name'] ?? ''),
-                                ]),
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Substitution: ${(s['Subject'] is Map ? s['Subject']['name'] : '') ?? ''}',
+                                  style: const TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                                Text((s['Teacher'] is Map ? s['Teacher']['name'] : '')?.toString() ?? ''),
+                              ],
+                            ),
                           ),
                         );
                       }
@@ -563,27 +761,28 @@ class _StudentTimetableScreenState extends State<StudentTimetableScreen> {
                       final recs = grid[day]?[pid] ?? [];
                       return Card(
                         child: ListTile(
-                          title:
-                              Text(p['period_name'] ?? p['name'] ?? 'Period'),
+                          title: Text(title),
                           subtitle: recs.isEmpty
                               ? const Text('No class')
                               : Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: recs.map<Widget>((r) {
+                                    if (r is! Map) return const SizedBox.shrink();
                                     return Padding(
                                       padding: const EdgeInsets.only(top: 4.0),
                                       child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(r['Subject']?['name'] ?? ''),
-                                            Text(r['Teacher']?['name'] ?? '',
-                                                style: TextStyle(
-                                                    color: Colors
-                                                        .grey.shade700)),
-                                          ]),
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text((r['Subject'] is Map ? r['Subject']['name'] : '')?.toString() ?? ''),
+                                          Text(
+                                            (r['Teacher'] is Map ? r['Teacher']['name'] : '')?.toString() ?? '',
+                                            style: TextStyle(color: Colors.grey.shade700),
+                                          ),
+                                        ],
+                                      ),
                                     );
-                                  }).toList()),
+                                  }).toList(),
+                                ),
                         ),
                       );
                     }).toList(),

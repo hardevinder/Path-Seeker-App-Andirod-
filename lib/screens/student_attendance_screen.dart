@@ -13,10 +13,12 @@ class StudentAttendanceScreen extends StatefulWidget {
   const StudentAttendanceScreen({super.key});
 
   @override
-  State<StudentAttendanceScreen> createState() => _StudentAttendanceScreenState();
+  State<StudentAttendanceScreen> createState() =>
+      _StudentAttendanceScreenState();
 }
 
-class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with WidgetsBindingObserver {
+class _StudentAttendanceScreenState extends State<StudentAttendanceScreen>
+    with WidgetsBindingObserver {
   DateTime currentMonth = DateTime.now();
   List<Map<String, dynamic>> attendanceRecords = [];
   List<Map<String, dynamic>> holidaysRaw = [];
@@ -45,6 +47,9 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
   Timer? _autoRefreshTimer;
   final Duration _refreshInterval = const Duration(seconds: 30);
   bool _refreshInProgress = false;
+
+  // --- tiny design helpers
+  static const Color kBrand = Color(0xFF6C63FF);
 
   @override
   void initState() {
@@ -80,7 +85,9 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
     // pause timers when app not active
     if (state == AppLifecycleState.resumed) {
       _startAutoRefresh();
-    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive || state == AppLifecycleState.detached) {
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
       _stopAutoRefresh();
     }
   }
@@ -102,10 +109,15 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
     final token = await _getToken();
     if (token == null || baseUrl.isEmpty) return;
     try {
-      final res = await http.get(Uri.parse('$baseUrl/incharges/students'), headers: {'Authorization': 'Bearer $token'});
+      final res = await http.get(
+        Uri.parse('$baseUrl/incharges/students'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
-        final list = List<Map<String, dynamic>>.from(data is Map && data['students'] is List ? data['students'] : []);
+        final list = List<Map<String, dynamic>>.from(
+          data is Map && data['students'] is List ? data['students'] : [],
+        );
         // Choose default: if user is parent/incharge -> pick first; if empty, keep null (self mode)
         setState(() {
           studentList = list;
@@ -124,14 +136,17 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
       selectedStudent = s;
       // when switching student, also reset class id and name from student object directly (if available)
       studentClassId = _extractClassIdFromStudent(s) ?? studentClassId;
-      studentName = (s?['name'] ?? s?['student_name'] ?? s?['studentName'])?.toString();
+      studentName =
+          (s?['name'] ?? s?['student_name'] ?? s?['studentName'])?.toString();
     });
     await _loadInitial();
   }
 
   int? _extractClassIdFromStudent(Map<String, dynamic>? s) {
     if (s == null) return null;
-    final v = s['class'] is Map ? s['class']['id'] : (s['class_id'] ?? s['classId'] ?? s['classID']);
+    final v = s['class'] is Map
+        ? s['class']['id']
+        : (s['class_id'] ?? s['classId'] ?? s['classID']);
     if (v is int) return v;
     if (v is String) return int.tryParse(v);
     return null;
@@ -148,7 +163,8 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
     setState(() => loading = true);
     await _fetchAttendance();
     await _fetchHolidays();
-    selectedDate = DateFormat('yyyy-MM-dd').format(DateTime(currentMonth.year, currentMonth.month, 1));
+    selectedDate = DateFormat('yyyy-MM-dd')
+        .format(DateTime(currentMonth.year, currentMonth.month, 1));
     setState(() => loading = false);
   }
 
@@ -164,10 +180,22 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
       final selId = _extractStudentId(selectedStudent);
       if (selId != null && selId.isNotEmpty) {
         // selected student mode
-        res = await http.get(Uri.parse('$baseUrl/attendance/student/$selId'), headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'});
+        res = await http.get(
+          Uri.parse('$baseUrl/attendance/student/$selId'),
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json'
+          },
+        );
       } else {
         // fallback: self mode (student logged in)
-        res = await http.get(Uri.parse('$baseUrl/attendance/student/me'), headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'});
+        res = await http.get(
+          Uri.parse('$baseUrl/attendance/student/me'),
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json'
+          },
+        );
       }
 
       if (res.statusCode == 200) {
@@ -177,7 +205,13 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
             : (body is Map && body['data'] is List)
                 ? body['data']
                 : <dynamic>[];
-        final list = List<Map<String, dynamic>>.from(rawList.map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}));
+        final list = List<Map<String, dynamic>>.from(
+          rawList.map(
+            (e) => e is Map
+                ? Map<String, dynamic>.from(e)
+                : <String, dynamic>{},
+          ),
+        );
 
         // Normalize date field for easier lookups later
         for (final r in list) {
@@ -192,14 +226,23 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
         }
 
         // Derive student meta from selectedStudent first, else fallback from record
-        String? nameLocal = (selectedStudent?['name'] ?? selectedStudent?['student_name'] ?? selectedStudent?['studentName'])?.toString();
+        String? nameLocal = (selectedStudent?['name'] ??
+                selectedStudent?['student_name'] ??
+                selectedStudent?['studentName'])
+            ?.toString();
         int? classLocal = _extractClassIdFromStudent(selectedStudent);
 
         if (list.isNotEmpty && (nameLocal == null || classLocal == null)) {
           final first = list.first;
-          final student = first['student'] is Map ? Map<String, dynamic>.from(first['student']) : <String, dynamic>{};
-          nameLocal ??= student['name'] ?? first['studentName'] ?? first['student_name'];
-          final classVal = (student['class_id'] ?? student['classId'] ?? first['class_id'] ?? first['classId']);
+          final student = first['student'] is Map
+              ? Map<String, dynamic>.from(first['student'])
+              : <String, dynamic>{};
+          nameLocal ??=
+              student['name'] ?? first['studentName'] ?? first['student_name'];
+          final classVal = (student['class_id'] ??
+              student['classId'] ??
+              first['class_id'] ??
+              first['classId']);
           if (classLocal == null) {
             if (classVal is int) classLocal = classVal;
             else if (classVal is String) classLocal = int.tryParse(classVal);
@@ -225,10 +268,18 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
     final token = await _getToken();
     if (token == null || baseUrl.isEmpty) return;
     try {
-      final res = await http.get(Uri.parse('$baseUrl/holidays'), headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'});
+      final res = await http.get(
+        Uri.parse('$baseUrl/holidays'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json'
+        },
+      );
       if (res.statusCode == 200) {
         final body = jsonDecode(res.body);
-        final list = (body is List) ? List<Map<String, dynamic>>.from(body) : <Map<String, dynamic>>[];
+        final list = (body is List)
+            ? List<Map<String, dynamic>>.from(body)
+            : <Map<String, dynamic>>[];
         setState(() => holidaysRaw = list);
       } else {
         debugPrint('holidays fetch ${res.statusCode}: ${res.body}');
@@ -266,9 +317,13 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
         if (parsed != null) return DateFormat('yyyy-MM-dd').format(parsed);
         // maybe epoch in string
         final n = int.tryParse(d);
-        if (n != null) return DateFormat('yyyy-MM-dd').format(DateTime.fromMillisecondsSinceEpoch(n));
+        if (n != null) {
+          return DateFormat('yyyy-MM-dd')
+              .format(DateTime.fromMillisecondsSinceEpoch(n));
+        }
       } else if (d is int) {
-        return DateFormat('yyyy-MM-dd').format(DateTime.fromMillisecondsSinceEpoch(d));
+        return DateFormat('yyyy-MM-dd')
+            .format(DateTime.fromMillisecondsSinceEpoch(d));
       } else if (d is DateTime) {
         return DateFormat('yyyy-MM-dd').format(d);
       }
@@ -276,15 +331,47 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
     return null;
   }
 
+  String _holidayDesc(dynamic h) {
+    if (h is! Map) return 'Holiday';
+    return (h['description'] ??
+            h['name'] ??
+            h['title'] ??
+            h['reason'] ??
+            'Holiday')
+        .toString()
+        .trim();
+  }
+
+  dynamic _holidayClassId(dynamic h) {
+    if (h is! Map) return null;
+    return h['classId'] ??
+        h['class_id'] ??
+        (h['class'] is Map ? h['class']['id'] : null);
+  }
+
+  /// Index holidays by date, and by classId (plus detect "global" holiday where classId==null).
   Map<String, Map<String, dynamic>> get holidaysMap {
     final Map<String, Map<String, dynamic>> idx = {};
     for (final h in holidaysRaw) {
-      final dStr = _dateFromAny(h['date']);
+      final dStr = _dateFromAny(h['date'] ?? h['holiday_date']);
       if (dStr == null) continue;
-      idx.putIfAbsent(dStr, () => {'rows': <Map<String, dynamic>>[], 'byClass': <String, Map<String, dynamic>>{}});
+
+      idx.putIfAbsent(dStr, () {
+        return {
+          'rows': <Map<String, dynamic>>[],
+          'byClass': <String, Map<String, dynamic>>{},
+          'global': <Map<String, dynamic>>[],
+        };
+      });
+
       idx[dStr]!['rows'].add(h);
-      final clsId = (h['class'] is Map) ? (h['class']['id']?.toString()) : (h['classId']?.toString());
-      if (clsId != null) idx[dStr]!['byClass'][clsId] = h;
+
+      final clsId = _holidayClassId(h);
+      if (clsId == null) {
+        (idx[dStr]!['global'] as List).add(h);
+      } else {
+        idx[dStr]!['byClass'][clsId.toString()] = h;
+      }
     }
     return idx;
   }
@@ -296,7 +383,9 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
     final totalDays = endOfMonth.day;
     final List<DateTime?> cells = [];
     for (int i = 0; i < startDay; i++) cells.add(null);
-    for (int d = 1; d <= totalDays; d++) cells.add(DateTime(currentMonth.year, currentMonth.month, d));
+    for (int d = 1; d <= totalDays; d++) {
+      cells.add(DateTime(currentMonth.year, currentMonth.month, d));
+    }
     return cells;
   }
 
@@ -317,32 +406,45 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
     }
   }
 
+  /// ✅ Holiday should NOT become "whole school".
+  /// Only show:
+  /// 1) class-specific holiday matching studentClassId, OR
+  /// 2) "global" holiday (classId null) if your backend uses it.
   Map<String, dynamic>? _holidayForDisplay(String dateStr) {
     final v = holidaysMap[dateStr];
     if (v == null) return null;
-    if (studentClassId != null && v['byClass'][studentClassId.toString()] != null) {
-      return v['byClass'][studentClassId.toString()] as Map<String, dynamic>?;
+
+    // class-specific
+    if (studentClassId != null) {
+      final byClass = (v['byClass'] as Map?) ?? {};
+      final match = byClass[studentClassId.toString()];
+      if (match != null) return Map<String, dynamic>.from(match);
     }
-    final rows = List<Map<String, dynamic>>.from(v['rows'] as List);
-    if (rows.isEmpty) return null;
-    final descs = rows.map((r) => (r['description'] ?? '').toString()).where((s) => s.isNotEmpty).toSet().toList();
-    return {
-      'description': descs.join(' • '),
-      'rows': rows,
-    };
+
+    // global holiday
+    final globals = (v['global'] as List?) ?? [];
+    if (globals.isNotEmpty) {
+      return Map<String, dynamic>.from(globals.first as Map);
+    }
+
+    return null;
   }
 
   int _countForMonth(String status) {
     final m = DateFormat('yyyy-MM').format(currentMonth);
     return attendanceRecords.where((r) {
       final d = (r['__date_normalized'] ?? r['date'])?.toString();
-      return d != null && d.startsWith(m) && (r['status'] ?? '').toString().toLowerCase() == status;
+      return d != null &&
+          d.startsWith(m) &&
+          (r['status'] ?? '').toString().toLowerCase() == status;
     }).length;
   }
 
   int _totalForMonth() {
     final m = DateFormat('yyyy-MM').format(currentMonth);
-    return attendanceRecords.where((r) => ((r['__date_normalized'] ?? r['date'])?.toString() ?? '').startsWith(m)).length;
+    return attendanceRecords.where((r) =>
+        ((r['__date_normalized'] ?? r['date'])?.toString() ?? '')
+            .startsWith(m)).length;
   }
 
   Map<String, int> _monthStats() {
@@ -350,37 +452,61 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
     final p = _countForMonth('present');
     final a = _countForMonth('absent');
     final l = _countForMonth('leave');
-    return {'total': total, 'present': p, 'absent': a, 'leave': l, 'percent': total > 0 ? ((p / total * 100).round()) : 0};
+    return {
+      'total': total,
+      'present': p,
+      'absent': a,
+      'leave': l,
+      'percent': total > 0 ? ((p / total * 100).round()) : 0
+    };
   }
 
+  /// ✅ Next holiday: prefer class-specific; else global.
   Map<String, dynamic>? get nextHoliday {
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    final keys = holidaysMap.keys.where((k) => k.compareTo(today) >= 0).toList()..sort();
+    final keys = holidaysMap.keys.where((k) => k.compareTo(today) >= 0).toList()
+      ..sort();
+
     if (keys.isEmpty) return null;
-    for (final k in keys) {
-      final v = holidaysMap[k]!;
-      if (v['byClass'][studentClassId?.toString() ?? ''] != null) {
-        final row = v['byClass'][studentClassId.toString()];
-        return {'date': k, 'description': row?['description'] ?? 'Holiday'};
+
+    // class-specific first
+    if (studentClassId != null) {
+      for (final k in keys) {
+        final v = holidaysMap[k]!;
+        final byClass = (v['byClass'] as Map?) ?? {};
+        final row = byClass[studentClassId.toString()];
+        if (row != null) {
+          return {'date': k, 'description': _holidayDesc(row)};
+        }
       }
     }
-    final k = keys.first;
-    final rows = holidaysMap[k]!['rows'] as List;
-    final descs = rows.map((r) => (r['description'] ?? '').toString()).where((s) => s.isNotEmpty).toSet().toList();
-    return {'date': k, 'description': descs.join(' • ')};
+
+    // global
+    for (final k in keys) {
+      final v = holidaysMap[k]!;
+      final globals = (v['global'] as List?) ?? [];
+      if (globals.isNotEmpty) {
+        final g = globals.first;
+        return {'date': k, 'description': _holidayDesc(g)};
+      }
+    }
+
+    return null;
   }
 
   void _onPrevMonth() {
     setState(() {
       currentMonth = DateTime(currentMonth.year, currentMonth.month - 1, 1);
-      selectedDate = DateFormat('yyyy-MM-dd').format(DateTime(currentMonth.year, currentMonth.month, 1));
+      selectedDate = DateFormat('yyyy-MM-dd')
+          .format(DateTime(currentMonth.year, currentMonth.month, 1));
     });
   }
 
   void _onNextMonth() {
     setState(() {
       currentMonth = DateTime(currentMonth.year, currentMonth.month + 1, 1);
-      selectedDate = DateFormat('yyyy-MM-dd').format(DateTime(currentMonth.year, currentMonth.month, 1));
+      selectedDate = DateFormat('yyyy-MM-dd')
+          .format(DateTime(currentMonth.year, currentMonth.month, 1));
     });
   }
 
@@ -398,7 +524,12 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
               children: [
                 DropdownButton<int>(
                   value: month,
-                  items: List.generate(12, (i) => i + 1).map((m) => DropdownMenuItem(value: m, child: Text(DateFormat.MMM().format(DateTime(0, m, 1))))).toList(),
+                  items: List.generate(12, (i) => i + 1)
+                      .map((m) => DropdownMenuItem(
+                          value: m,
+                          child: Text(DateFormat.MMM()
+                              .format(DateTime(0, m, 1)))))
+                      .toList(),
                   onChanged: (v) {
                     if (v != null) setSt(() => month = v);
                   },
@@ -406,7 +537,9 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
                 const SizedBox(width: 8),
                 DropdownButton<int>(
                   value: year,
-                  items: List.generate(25, (i) => year - 12 + i).map((y) => DropdownMenuItem(value: y, child: Text('$y'))).toList(),
+                  items: List.generate(25, (i) => year - 12 + i)
+                      .map((y) => DropdownMenuItem(value: y, child: Text('$y')))
+                      .toList(),
                   onChanged: (v) {
                     if (v != null) setSt(() => year = v);
                   },
@@ -414,8 +547,12 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
               ],
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
-              ElevatedButton(onPressed: () => Navigator.pop(c, DateTime(year, month, 1)), child: const Text('OK')),
+              TextButton(
+                  onPressed: () => Navigator.pop(c),
+                  child: const Text('Cancel')),
+              ElevatedButton(
+                  onPressed: () => Navigator.pop(c, DateTime(year, month, 1)),
+                  child: const Text('OK')),
             ],
           );
         });
@@ -442,6 +579,7 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
   void _startTitleTimer() {
     _titleTimer?.cancel();
     _titleTimer = Timer.periodic(_titleInterval, (_) {
+      if (!mounted) return;
       setState(() {
         _titleIndex = (_titleIndex + 1) % _currentTitles().length;
       });
@@ -452,10 +590,13 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
     _kpiTimer?.cancel();
     _kpiTimer = Timer.periodic(_kpiInterval, (_) {
       final count = _kpiItems().length;
-      if (count == 0 || _kpiPageController == null || !_kpiPageController!.hasClients) return;
+      if (count == 0 ||
+          _kpiPageController == null ||
+          !_kpiPageController!.hasClients) return;
       _kpiPage = (_kpiPage + 1) % count;
-      _kpiPageController!.animateToPage(_kpiPage, duration: _kpiAnim, curve: Curves.easeInOut);
-      setState(() {});
+      _kpiPageController!
+          .animateToPage(_kpiPage, duration: _kpiAnim, curve: Curves.easeInOut);
+      if (mounted) setState(() {});
     });
   }
 
@@ -464,14 +605,25 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
   // ---------------------------
   Widget _hero() {
     final titles = _currentTitles();
-    final currentTitle = titles.isEmpty ? 'Attendance Calendar' : titles[_titleIndex % titles.length];
+    final currentTitle =
+        titles.isEmpty ? 'Attendance Calendar' : titles[_titleIndex % titles.length];
 
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [Color(0xFF7B2FF7), Color(0xFFF107A3)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF7B2FF7), Color(0xFFF107A3)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         borderRadius: const BorderRadius.vertical(bottom: Radius.circular(18)),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 18, offset: const Offset(0, 8))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          )
+        ],
       ),
       padding: const EdgeInsets.all(18),
       child: Column(
@@ -481,22 +633,62 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 450),
             transitionBuilder: (child, anim) {
-              return FadeTransition(opacity: anim, child: SlideTransition(position: Tween<Offset>(begin: const Offset(0, 0.2), end: Offset.zero).animate(anim), child: child));
+              return FadeTransition(
+                opacity: anim,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.2),
+                    end: Offset.zero,
+                  ).animate(anim),
+                  child: child,
+                ),
+              );
             },
             child: Text(
               currentTitle,
               key: ValueKey<String>(currentTitle),
-              style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
+          const SizedBox(height: 10),
+
+          // small meta row (design improvement)
+          Row(
+            children: [
+              const Icon(Icons.person, size: 16, color: Colors.white70),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  (studentName?.isNotEmpty == true)
+                      ? '${studentName!}${studentClassName != null ? " • $studentClassName" : ""}'
+                      : (studentClassName != null ? studentClassName! : 'My Attendance'),
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+
           const SizedBox(height: 12),
+
           // Month box centered on the next line
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              IconButton(onPressed: _onPrevMonth, icon: const Icon(Icons.chevron_left, color: Colors.white)),
+              IconButton(
+                onPressed: _onPrevMonth,
+                icon: const Icon(Icons.chevron_left, color: Colors.white),
+              ),
               SizedBox(
                 height: 40,
                 child: ElevatedButton(
@@ -504,20 +696,28 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
                     backgroundColor: Colors.white,
                     foregroundColor: Colors.black87,
                     padding: const EdgeInsets.symmetric(horizontal: 18),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                     elevation: 0,
                   ),
                   onPressed: () async {
                     final picked = await showMonthPicker(context, currentMonth);
                     if (picked != null) setState(() => currentMonth = picked);
                   },
-                  child: Text(DateFormat('MMM yyyy').format(currentMonth), style: const TextStyle(fontSize: 14)),
+                  child: Text(
+                    DateFormat('MMM yyyy').format(currentMonth),
+                    style: const TextStyle(fontSize: 14),
+                  ),
                 ),
               ),
-              IconButton(onPressed: _onNextMonth, icon: const Icon(Icons.chevron_right, color: Colors.white)),
+              IconButton(
+                onPressed: _onNextMonth,
+                icon: const Icon(Icons.chevron_right, color: Colors.white),
+              ),
             ],
           ),
           const SizedBox(height: 12),
+
           // legend explaining color mapping (no text inside calendar cells)
           Wrap(
             spacing: 10,
@@ -540,24 +740,41 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
   // --- Student switcher bar (Option B)
   Widget _studentSwitcherBar() {
     if (studentList.isEmpty) return const SizedBox.shrink();
+
+    // subtle “pill” design improvement
     return Container(
       width: double.infinity,
       color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<Map<String, dynamic>>(
-          value: selectedStudent,
-          isExpanded: true,
-          icon: const Icon(Icons.arrow_drop_down),
-          onChanged: (v) => _onChangeStudent(v),
-          items: studentList.map((s) {
-            final name = s['name'] ?? s['student_name'] ?? s['studentName'] ?? 'Student';
-            final cls = s['class']?['name'] ?? s['class_name'] ?? s['className'] ?? '';
-            return DropdownMenuItem<Map<String, dynamic>>(
-              value: s,
-              child: Text('$name${cls.isNotEmpty ? ' ($cls)' : ''}', style: const TextStyle(fontWeight: FontWeight.w600)),
-            );
-          }).toList(),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF3F4FF),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.black12),
+        ),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<Map<String, dynamic>>(
+            value: selectedStudent,
+            isExpanded: true,
+            icon: const Icon(Icons.arrow_drop_down),
+            onChanged: (v) => _onChangeStudent(v),
+            items: studentList.map((s) {
+              final name =
+                  s['name'] ?? s['student_name'] ?? s['studentName'] ?? 'Student';
+              final cls = s['class']?['name'] ??
+                  s['class_name'] ??
+                  s['className'] ??
+                  '';
+              return DropdownMenuItem<Map<String, dynamic>>(
+                value: s,
+                child: Text(
+                  '$name${cls.isNotEmpty ? ' ($cls)' : ''}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              );
+            }).toList(),
+          ),
         ),
       ),
     );
@@ -568,11 +785,20 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
       message: tooltip,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(color: Colors.white.withOpacity(0.12), borderRadius: BorderRadius.circular(999)),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(999),
+        ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
           const SizedBox(width: 8),
-          Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+          Text(label,
+              style: const TextStyle(
+                  color: Colors.white, fontWeight: FontWeight.w800)),
         ]),
       ),
     );
@@ -582,11 +808,31 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
   List<Map<String, dynamic>> _kpiItems() {
     final stats = _monthStats();
     return [
-      {'title': 'Total', 'value': stats['total'].toString(), 'colors': [const Color(0xFF00C6FF), const Color(0xFF0072FF)]},
-      {'title': 'Present', 'value': stats['present'].toString(), 'colors': [const Color(0xFF11998E), const Color(0xFF38EF7D)]},
-      {'title': 'Absent', 'value': stats['absent'].toString(), 'colors': [const Color(0xFFFF416C), const Color(0xFFFF4B2B)]},
-      {'title': 'Leave', 'value': stats['leave'].toString(), 'colors': [const Color(0xFFF7971E), const Color(0xFFFFD200)]},
-      {'title': '% Presence', 'value': '${stats['percent']}%', 'colors': [const Color(0xFF8E2DE2), const Color(0xFF4A00E0)]},
+      {
+        'title': 'Total',
+        'value': stats['total'].toString(),
+        'colors': [const Color(0xFF00C6FF), const Color(0xFF0072FF)]
+      },
+      {
+        'title': 'Present',
+        'value': stats['present'].toString(),
+        'colors': [const Color(0xFF11998E), const Color(0xFF38EF7D)]
+      },
+      {
+        'title': 'Absent',
+        'value': stats['absent'].toString(),
+        'colors': [const Color(0xFFFF416C), const Color(0xFFFF4B2B)]
+      },
+      {
+        'title': 'Leave',
+        'value': stats['leave'].toString(),
+        'colors': [const Color(0xFFF7971E), const Color(0xFFFFD200)]
+      },
+      {
+        'title': '% Presence',
+        'value': '${stats['percent']}%',
+        'colors': [const Color(0xFF8E2DE2), const Color(0xFF4A00E0)]
+      },
     ];
   }
 
@@ -605,27 +851,54 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
             onPageChanged: (i) => setState(() => _kpiPage = i),
             itemBuilder: (context, i) {
               final it = items[i];
-              // add horizontal gap by wrapping with padding
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8.0),
                 child: Container(
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: List<Color>.from(it['colors']), begin: Alignment.topLeft, end: Alignment.bottomRight),
+                    gradient: LinearGradient(
+                      colors: List<Color>.from(it['colors']),
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
                     borderRadius: BorderRadius.circular(12),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 12, offset: const Offset(0, 6))],
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.06),
+                        blurRadius: 12,
+                        offset: const Offset(0, 6),
+                      )
+                    ],
                   ),
                   padding: const EdgeInsets.all(12),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(it['title'], style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w800)),
-                    const Spacer(),
-                    Text(it['value'], style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
-                  ]),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        it['title'],
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        it['value'],
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               );
             },
           ),
         ),
         const SizedBox(height: 8),
+
         // compact dots indicator
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -637,7 +910,7 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
               width: active ? 18 : 8,
               height: 8,
               decoration: BoxDecoration(
-                color: active ? const Color(0xFF6C63FF) : Colors.black.withOpacity(0.12),
+                color: active ? kBrand : Colors.black.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(8),
               ),
             );
@@ -650,34 +923,60 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
   // calendar grid - show date + small colored dot for status
   Widget _calendarGrid() {
     final cells = calendarCells;
-    // single-letter abbreviations as requested for day headers
-    final dayHeader = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+    final dayHeader = const ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
     return Column(
       children: [
-        Row(children: dayHeader.map((d) => Expanded(child: Container(padding: const EdgeInsets.symmetric(vertical: 8), child: Text(d, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w700))))).toList()),
+        Row(
+          children: dayHeader
+              .map(
+                (d) => Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      d,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ),
+              )
+              .toList(),
+        ),
         const SizedBox(height: 8),
         GridView.builder(
           physics: const NeverScrollableScrollPhysics(),
           shrinkWrap: true,
           itemCount: cells.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 7, crossAxisSpacing: 6, mainAxisSpacing: 6, childAspectRatio: 0.95),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 7,
+            crossAxisSpacing: 6,
+            mainAxisSpacing: 6,
+            childAspectRatio: 0.95,
+          ),
           itemBuilder: (c, i) {
             final cell = cells[i];
-            if (cell == null) return Container(); // empty spacer
+            if (cell == null) return const SizedBox.shrink();
+
             final dateStr = DateFormat('yyyy-MM-dd').format(cell);
             final att = _attendanceForDate(dateStr);
             final hol = _holidayForDisplay(dateStr);
-            final isFuture = cell.isAfter(DateTime.now());
+
+            final now = DateTime.now();
+            final todayStr = DateFormat('yyyy-MM-dd').format(now);
+            final isToday = dateStr == todayStr;
+
+            final isFuture = cell.isAfter(DateTime(now.year, now.month, now.day));
             final isSunday = cell.weekday == DateTime.sunday;
 
             Color dotColor = Colors.grey;
             bool notMarkedFlag = false;
+
             String tooltip = DateFormat('dd MMM yyyy').format(cell);
 
             if (hol != null) {
               dotColor = Colors.orange;
-              tooltip += '\nHoliday: ${hol['description'] ?? ''}';
+              tooltip += '\nHoliday: ${_holidayDesc(hol)}';
             } else if (!isFuture && att != null) {
               final s = (att['status'] ?? '').toString().toLowerCase();
               if (s == 'present') dotColor = Colors.green;
@@ -703,22 +1002,56 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
                 padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: isSelected ? Colors.deepPurple : Colors.black12, width: isSelected ? 2 : 1),
-                  boxShadow: isSelected ? [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 6))] : null,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isSelected ? kBrand : Colors.black12,
+                    width: isSelected ? 2 : 1,
+                  ),
+                  boxShadow: (isSelected || isToday)
+                      ? [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 10,
+                            offset: const Offset(0, 6),
+                          )
+                        ]
+                      : null,
                 ),
                 child: Tooltip(
                   message: tooltip,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // date number top-left
-                      Align(
-                        alignment: Alignment.topLeft,
-                        child: Text(
-                          '${cell.day}',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: isSelected ? Colors.deepPurple : Colors.black87),
-                        ),
+                      // date number top-left + today tiny pill
+                      Row(
+                        children: [
+                          Text(
+                            '${cell.day}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: isSelected ? kBrand : Colors.black87,
+                            ),
+                          ),
+                          const Spacer(),
+                          if (isToday)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: kBrand.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: const Text(
+                                'Today',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  color: kBrand,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                       const Spacer(),
 
@@ -732,8 +1065,19 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
                             decoration: BoxDecoration(
                               color: dotColor,
                               shape: BoxShape.circle,
-                              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 3, offset: const Offset(0, 2))],
-                              border: notMarkedFlag ? Border.all(color: Colors.grey.shade300, width: 1.5) : null,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.08),
+                                  blurRadius: 3,
+                                  offset: const Offset(0, 2),
+                                )
+                              ],
+                              border: notMarkedFlag
+                                  ? Border.all(
+                                      color: Colors.grey.shade300,
+                                      width: 1.5,
+                                    )
+                                  : null,
                             ),
                           ),
                         ],
@@ -752,25 +1096,54 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
 
   Widget _rightPanel() {
     if (selectedDate == null) {
-      return Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8)]),
-        child: const Text('Select a date to view details', textAlign: TextAlign.center),
+      return _card(
+        child: const Text('Select a date to view details',
+            textAlign: TextAlign.center),
       );
     }
 
     final hol = _holidayForDisplay(selectedDate!);
     if (hol != null) {
+      final desc = _holidayDesc(hol);
+
+      // gather "declared by" if rows exist in map (optional)
+      final declaredBy = <String>[];
+      if (hol['creator'] is Map) {
+        final c = hol['creator'] as Map;
+        final who = (c['name'] ?? c['email'])?.toString();
+        if (who != null && who.trim().isNotEmpty) declaredBy.add(who.trim());
+      }
+
       return Container(
         padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(12)),
+        decoration: BoxDecoration(
+          color: Colors.orange.withOpacity(0.10),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.orange.withOpacity(0.25)),
+        ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Holiday', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.blue.shade900)),
+          Row(
+            children: [
+              const Icon(Icons.celebration, color: Colors.orange, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                'Holiday',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.orange.shade900,
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 8),
-          Text(hol['description'] ?? 'Holiday for this date', style: const TextStyle(fontSize: 14)),
-          const SizedBox(height: 8),
-          if ((hol['rows'] as List?)?.isNotEmpty ?? false)
-            Text('Declared by: ${(hol['rows'] as List).map((r) => r['creator']?['name'] ?? r['creator']?['email']).where((e) => e != null).join(", ")}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
+          Text(desc.isNotEmpty ? desc : 'Holiday for this date',
+              style: const TextStyle(fontSize: 14)),
+          if (declaredBy.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text('Declared by: ${declaredBy.join(", ")}',
+                style: const TextStyle(fontSize: 12, color: Colors.black54)),
+          ],
         ]),
       );
     }
@@ -782,29 +1155,41 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
     final total = stats['total'] as int;
 
     if (total == 0) {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8)]),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.center, children: [
-          const Text('Attendance Summary', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-          const SizedBox(height: 16),
-          Container(
-            width: 120,
-            height: 120,
-            decoration: BoxDecoration(color: Colors.grey.shade100, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 6)]),
-            child: Center(child: Text('No data', style: TextStyle(color: Colors.grey.shade700))),
-          ),
-          const SizedBox(height: 12),
-          const Text('No attendance records for this month', textAlign: TextAlign.center, style: TextStyle(color: Colors.black54)),
-        ]),
+      return _card(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const Text('Attendance Summary',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+            const SizedBox(height: 14),
+            Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                shape: BoxShape.circle,
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 6)],
+              ),
+              child: Center(
+                child: Text('No data',
+                    style: TextStyle(color: Colors.grey.shade700)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'No attendance records for this month',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.black54),
+            ),
+          ],
+        ),
       );
     }
 
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8)]),
+    return _card(
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        const Text('Attendance Summary', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+        const Text('Attendance Summary',
+            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
         const SizedBox(height: 12),
         SizedBox(
           height: 160,
@@ -813,9 +1198,24 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
               sectionsSpace: 2,
               centerSpaceRadius: 30,
               sections: [
-                PieChartSectionData(value: present.toDouble(), color: Colors.green, title: '$present', titleStyle: const TextStyle(color: Colors.white)),
-                PieChartSectionData(value: absent.toDouble(), color: Colors.red, title: '$absent', titleStyle: const TextStyle(color: Colors.white)),
-                PieChartSectionData(value: leave.toDouble(), color: Colors.amber, title: '$leave', titleStyle: const TextStyle(color: Colors.white)),
+                PieChartSectionData(
+                  value: present.toDouble(),
+                  color: Colors.green,
+                  title: '$present',
+                  titleStyle: const TextStyle(color: Colors.white),
+                ),
+                PieChartSectionData(
+                  value: absent.toDouble(),
+                  color: Colors.red,
+                  title: '$absent',
+                  titleStyle: const TextStyle(color: Colors.white),
+                ),
+                PieChartSectionData(
+                  value: leave.toDouble(),
+                  color: Colors.amber,
+                  title: '$leave',
+                  titleStyle: const TextStyle(color: Colors.white),
+                ),
               ],
             ),
           ),
@@ -830,43 +1230,81 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
           _legendDot('H = Holiday', Colors.orange),
         ]),
         const SizedBox(height: 12),
-        Text('Total marked: $total', style: const TextStyle(color: Colors.black54)),
+        Text('Total marked: $total',
+            style: const TextStyle(color: Colors.black54)),
       ]),
+    );
+  }
+
+  Widget _card({required Widget child}) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8)],
+      ),
+      child: child,
     );
   }
 
   Widget _legendDot(String label, Color color) {
     return Row(mainAxisSize: MainAxisSize.min, children: [
-      Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+      Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
       const SizedBox(width: 6),
       Text(label, style: const TextStyle(fontSize: 12)),
     ]);
   }
 
+  /// ✅ Now shows only this student's class holidays (and global holidays), not all classes.
   Widget _monthlyHolidayList() {
     final start = DateTime(currentMonth.year, currentMonth.month, 1);
     final end = DateTime(currentMonth.year, currentMonth.month + 1, 0);
-    final list = holidaysMap.entries.where((e) {
+
+    final entries = holidaysMap.entries.where((e) {
       final d = DateTime.parse(e.key);
-      return d.isAtSameMomentAs(start) || (d.isAfter(start) && d.isBefore(end)) || d.isAtSameMomentAs(end);
+      return (d.isAtSameMomentAs(start) ||
+          (d.isAfter(start) && d.isBefore(end)) ||
+          d.isAtSameMomentAs(end));
     }).toList()
       ..sort((a, b) => a.key.compareTo(b.key));
 
-    if (list.isEmpty) {
-      return Container(padding: const EdgeInsets.all(12), child: const Text('No holidays this month.'));
+    final filtered = <Map<String, dynamic>>[];
+    for (final entry in entries) {
+      final date = entry.key;
+      final hol = _holidayForDisplay(date);
+      if (hol == null) continue; // only student's holiday
+      filtered.add({'date': date, 'holiday': hol});
+    }
+
+    if (filtered.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        child: const Text('No holidays this month.'),
+      );
     }
 
     return Container(
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8)]),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8)],
+      ),
       child: Column(
-        children: list.map((entry) {
-          final d = entry.key;
-          final rows = List<Map<String, dynamic>>.from(entry.value['rows'] as List);
-          final descs = rows.map((r) => (r['description'] ?? '').toString()).where((s) => s.isNotEmpty).toSet().join(' • ');
+        children: filtered.map((row) {
+          final d = row['date'] as String;
+          final hol = row['holiday'];
           return ListTile(
+            leading: const Icon(Icons.event, color: Colors.orange),
             title: Text(DateFormat('EEE, dd MMM').format(DateTime.parse(d))),
-            subtitle: Text(descs.isNotEmpty ? descs : 'Holiday'),
-            trailing: const Chip(label: Text('Holiday')),
+            subtitle: Text(_holidayDesc(hol)),
+            trailing: Chip(
+              backgroundColor: Colors.orange.withOpacity(0.12),
+              label: const Text('Holiday'),
+            ),
             dense: true,
           );
         }).toList(),
@@ -877,9 +1315,24 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
   String? get studentClassName {
     if (studentClassId == null) return null;
     final map = {
-      0: "Pre Nursery",1:"Nursery",2:"LKG",3:"UKG",4:"I",5:"II",6:"III",7:"IV",8:"V",9:"VI",10:"VII",11:"VIII",12:"IX",13:"X",18:"XI",19:"XII"
+      0: "Pre Nursery",
+      1: "Nursery",
+      2: "LKG",
+      3: "UKG",
+      4: "I",
+      5: "II",
+      6: "III",
+      7: "IV",
+      8: "V",
+      9: "VI",
+      10: "VII",
+      11: "VIII",
+      12: "IX",
+      13: "X",
+      18: "XI",
+      19: "XII"
     };
-    return map[studentClassId] ?? 'Class ${studentClassId}';
+    return map[studentClassId] ?? 'Class $studentClassId';
   }
 
   @override
@@ -887,7 +1340,7 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Attendance'),
-        backgroundColor: const Color(0xFF6C63FF),
+        backgroundColor: kBrand,
         elevation: 0,
       ),
       backgroundColor: const Color(0xFFF6F9FF),
@@ -895,7 +1348,7 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _loadInitial,
-              color: const Color(0xFF6C63FF),
+              color: kBrand,
               child: SingleChildScrollView(
                 padding: const EdgeInsets.only(bottom: 30),
                 physics: const AlwaysScrollableScrollPhysics(),
@@ -903,7 +1356,7 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _hero(), // title + month picker + legend
-                    _studentSwitcherBar(), // <-- Option B full-width white bar
+                    _studentSwitcherBar(),
                     const SizedBox(height: 16),
 
                     // KPI pager
@@ -916,35 +1369,38 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> with 
                     // Main two-column layout (responsive)
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: LayoutBuilder(builder: (context, constraints) {
-                        final wide = constraints.maxWidth > 900;
-                        return wide
-                            ? Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                Expanded(
-                                  flex: 2,
-                                  child: Column(children: [
-                                    Container(
-                                        padding: const EdgeInsets.all(12),
-                                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8)]),
-                                        child: _calendarGrid()),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final wide = constraints.maxWidth > 900;
+                          return wide
+                              ? Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      flex: 2,
+                                      child: Column(
+                                        children: [
+                                          _card(child: _calendarGrid()),
+                                          const SizedBox(height: 12),
+                                          _monthlyHolidayList(),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(flex: 1, child: _rightPanel()),
+                                  ],
+                                )
+                              : Column(
+                                  children: [
+                                    _card(child: _calendarGrid()),
+                                    const SizedBox(height: 12),
+                                    _rightPanel(),
                                     const SizedBox(height: 12),
                                     _monthlyHolidayList(),
-                                  ]),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(flex: 1, child: _rightPanel()),
-                              ])
-                            : Column(children: [
-                                Container(
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8)]),
-                                    child: _calendarGrid()),
-                                const SizedBox(height: 12),
-                                _rightPanel(),
-                                const SizedBox(height: 12),
-                                _monthlyHolidayList(),
-                              ]);
-                      }),
+                                  ],
+                                );
+                        },
+                      ),
                     ),
                   ],
                 ),

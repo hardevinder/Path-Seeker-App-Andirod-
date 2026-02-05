@@ -21,9 +21,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // ---- state ----
   bool loading = true;
   String username = '';
+
+  // basic identity
   String? studentName;
+  String? admissionNumber;
+
+  // ✅ NEW: DOB + Blood Group
+  String? dateOfBirth; // raw yyyy-mm-dd
+  String? bloodGroup;
+
+  // academic
   String? className;
   String? sectionName;
+  String? sessionName;
+
+  // contact / family
+  String? fatherName;
+  String? motherName;
+  String? fatherPhone;
+  String? motherPhone;
+
+  // address
+  String? address;
+
+  // transport
+  int? routeId;
+  String? routeName;
+  num? routeCost;
+
+  // photo
+  String? photoUrl;
 
   // role flag
   bool isTeacher = false;
@@ -110,11 +137,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _fetchAll() async {
     final token = await _getToken();
-    if (token == null || baseUrl.isEmpty) return;
+    if (baseUrl.isEmpty) return;
 
-    final headers = {
-      'Authorization': 'Bearer $token',
-      'Content-Type': 'application/json'
+    final headers = <String, String>{
+      'Accept': 'application/json',
+      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
     };
 
     await Future.wait([
@@ -131,87 +159,94 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _startAutoSlide();
   }
 
+  // ✅ Profile endpoint by Admission Number
+  // GET /students/admission/:admission_number
   Future<void> _fetchStudentProfile(Map<String, String> headers) async {
     try {
       if (username.isEmpty) return;
+
       final res = await http.get(
-        Uri.parse('$baseUrl/StudentsApp/admission/$username/fees'),
+        Uri.parse('$baseUrl/students/admission/$username'),
         headers: headers,
       );
-      if (res.statusCode == 200) {
-        final json = jsonDecode(res.body);
 
-        String? pickName(Map<String, dynamic> j) {
-          final tryKeys = [
-            'name',
-            'studentName',
-            'student_name',
-            'displayName',
-            'fullName',
-            'full_name',
-            'firstName',
-            'first_name',
-            'preferredName',
-            'preferred_name'
-          ];
-          for (final k in tryKeys) {
-            final v = j[k];
-            if (v is String && v.trim().isNotEmpty) return v.trim();
-          }
-          if (j['student'] is Map) {
-            final s = Map<String, dynamic>.from(j['student']);
-            final v = pickName(s);
-            if (v != null) return v;
-          }
-          if (j['data'] is Map) {
-            final s = Map<String, dynamic>.from(j['data']);
-            final v = pickName(s);
-            if (v != null) return v;
-          }
-          if (j['profile'] is Map) {
-            final s = Map<String, dynamic>.from(j['profile']);
-            final v = pickName(s);
-            if (v != null) return v;
-          }
-          return null;
-        }
+      if (res.statusCode != 200) return;
 
-        String? candidate = pickName(Map<String, dynamic>.from(json));
+      final j = jsonDecode(res.body);
+      if (j is! Map) return;
+      final json = Map<String, dynamic>.from(j);
 
-        bool looksNumeric(String s) => RegExp(r'^[\d\-\s]+$').hasMatch(s);
-        final admissionField = (json['admissionNumber'] ??
-                json['admission_no'] ??
-                json['admission'])
-            ?.toString();
-
-        if (candidate != null) {
-          final c = candidate.trim();
-          if (c.isEmpty ||
-              looksNumeric(c) ||
-              (admissionField != null && c == admissionField.toString())) {
-            candidate = null;
-          }
-        }
-
-        String finalName;
-        if (candidate != null) {
-          finalName = candidate;
-        } else if (username.isNotEmpty && !looksNumeric(username)) {
-          finalName = username;
-        } else {
-          finalName = 'Student';
-        }
-
-        if (!mounted) return;
-        setState(() {
-          studentName = finalName;
-          className = json['class_name'] ?? json['class'] ?? className;
-          sectionName = json['section_name'] ?? sectionName;
-        });
+      String? _s(dynamic v) {
+        if (v == null) return null;
+        final t = v.toString().trim();
+        return t.isEmpty ? null : t;
       }
+
+      int? _i(dynamic v) {
+        if (v == null) return null;
+        if (v is int) return v;
+        return int.tryParse(v.toString());
+      }
+
+      num? _n(dynamic v) {
+        if (v == null) return null;
+        if (v is num) return v;
+        return num.tryParse(v.toString().replaceAll(',', ''));
+      }
+
+      final cls = (json['Class'] is Map) ? Map<String, dynamic>.from(json['Class']) : null;
+      final sec = (json['Section'] is Map) ? Map<String, dynamic>.from(json['Section']) : null;
+      final ses = (json['Session'] is Map) ? Map<String, dynamic>.from(json['Session']) : null;
+      final trans = (json['Transportation'] is Map) ? Map<String, dynamic>.from(json['Transportation']) : null;
+
+      // ✅ API keys based on your payload
+      final dob = _s(json['Date_Of_Birth']) ?? _s(json['date_of_birth']) ?? _s(json['dob']);
+      final bg = _s(json['b_group']) ?? _s(json['blood_group']) ?? _s(json['bloodGroup']);
+
+      final photo = _s(json['photo_url']) ?? _s(json['photoUrl']); // just in case
+
+      if (!mounted) return;
+      setState(() {
+        // identity
+        studentName = _s(json['name']) ?? studentName;
+        admissionNumber = _s(json['admission_number']) ?? _s(json['admissionNumber']) ?? admissionNumber;
+
+        // ✅ DOB + Blood Group
+        dateOfBirth = dob ?? dateOfBirth;
+        bloodGroup = bg ?? bloodGroup;
+
+        // academic
+        className = _s(cls?['class_name']) ?? _s(json['class_name']) ?? className;
+        sectionName = _s(sec?['section_name']) ?? _s(json['section_name']) ?? sectionName;
+        sessionName = _s(ses?['name']) ?? sessionName;
+
+        // family
+        fatherName = _s(json['father_name']) ?? fatherName;
+        motherName = _s(json['mother_name']) ?? motherName;
+        fatherPhone = _s(json['father_phone']) ?? fatherPhone;
+        motherPhone = _s(json['mother_phone']) ?? motherPhone;
+
+        // address
+        address = _s(json['address']) ?? address;
+
+        // transport
+        routeId = _i(json['route_id']) ?? routeId;
+        routeName = _s(trans?['RouteName']) ?? routeName;
+        routeCost = _n(trans?['Cost']) ?? routeCost;
+
+        // photo
+        photoUrl = photoUrlSafe(photo ?? photoUrl);
+      });
     } catch (e, st) {
       debugPrint('Error fetching student profile: $e\n$st');
     }
+  }
+
+  String? photoUrlSafe(String? u) {
+    if (u == null) return null;
+    final t = u.trim();
+    if (t.isEmpty) return null;
+    return t;
   }
 
   Future<void> _fetchAttendance(Map<String, String> headers) async {
@@ -399,7 +434,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _fetchCirculars(Map<String, String> headers) async {
     try {
-      final res = await http.get(Uri.parse('$baseUrl/circulars'), headers: headers);
+      final res =
+          await http.get(Uri.parse('$baseUrl/circulars'), headers: headers);
       if (res.statusCode == 200) {
         final json = jsonDecode(res.body);
         final list = (json['circulars'] as List<dynamic>?) ?? [];
@@ -425,14 +461,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _fetchTodayTimetable(Map<String, String> headers) async {
     try {
-      final pRes = await http.get(Uri.parse('$baseUrl/periods'), headers: headers);
+      final pRes =
+          await http.get(Uri.parse('$baseUrl/periods'), headers: headers);
       final tRes = await http.get(
         Uri.parse('$baseUrl/period-class-teacher-subject/student/timetable'),
         headers: headers,
       );
       final periods = (jsonDecode(pRes.body) as List<dynamic>?) ?? [];
       final ttbRaw = jsonDecode(tRes.body);
-      final ttb = (ttbRaw is List) ? ttbRaw : (ttbRaw['timetable'] as List<dynamic>?) ?? [];
+      final ttb =
+          (ttbRaw is List) ? ttbRaw : (ttbRaw['timetable'] as List<dynamic>?) ?? [];
 
       final days = [
         'Sunday',
@@ -492,10 +530,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // ---------------- UI ----------------
   @override
   Widget build(BuildContext context) {
-    final presencePct = totalDays > 0
-        ? ((present / (totalDays > 0 ? totalDays : 1)) * 100).round()
-        : 0;
-
     final bgGradient = const LinearGradient(
       colors: [Color(0xFFF7FAFF), Color(0xFFF3F0FF), Color(0xFFEFF6FF)],
       begin: Alignment.topLeft,
@@ -521,12 +555,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
               children: [
                 _heroSection(),
-                const SizedBox(height: 14),
-                _slidesPanel(presencePct),
+                const SizedBox(height: 12),
+                if (!isTeacher) _studentProfileCard(),
+                if (!isTeacher) const SizedBox(height: 14),
+                _slidesPanel(presencePct()),
                 const SizedBox(height: 16),
                 _todayCardNoClock(),
                 const SizedBox(height: 12),
-                _quickActionsGrid(), // ✅ updated (adds teacher calendar)
+                _quickActionsGrid(),
                 const SizedBox(height: 16),
                 _recentCircularsFullWidth(),
                 const SizedBox(height: 16),
@@ -542,9 +578,210 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  // ------------------------- NEW: Profile card -------------------------
+  Widget _studentProfileCard() {
+    final hasAny =
+        (admissionNumber?.isNotEmpty ?? false) ||
+        (sessionName?.isNotEmpty ?? false) ||
+        (dateOfBirth?.isNotEmpty ?? false) ||
+        (bloodGroup?.isNotEmpty ?? false) ||
+        (fatherName?.isNotEmpty ?? false) ||
+        (motherName?.isNotEmpty ?? false) ||
+        (fatherPhone?.isNotEmpty ?? false) ||
+        (motherPhone?.isNotEmpty ?? false) ||
+        (address?.isNotEmpty ?? false) ||
+        (routeName?.isNotEmpty ?? false);
+
+    if (!hasAny && loading) return _skeleton();
+
+    final dobPretty = _formatDobPretty(dateOfBirth);
+    final ageText = _ageFromDob(dateOfBirth);
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.045),
+            blurRadius: 14,
+            offset: const Offset(0, 8),
+          )
+        ],
+        border: Border.all(color: Colors.black.withOpacity(0.03)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFEEF3FF), Color(0xFFF9F5FF)],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.black.withOpacity(0.03)),
+                ),
+                child: const Icon(Icons.badge, color: kAccent, size: 18),
+              ),
+              const SizedBox(width: 10),
+              const Text(
+                'Student Profile',
+                style: TextStyle(
+                  color: Colors.black87,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 15,
+                ),
+              ),
+              const Spacer(),
+              TextButton(
+                onPressed: () => Navigator.pushNamed(context, '/fee-details'),
+                child: const Text(
+                  'Fees',
+                  style: TextStyle(color: Colors.black54),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 10),
+
+          // Pills row
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              if ((admissionNumber ?? '').trim().isNotEmpty)
+                _miniPill('Adm No', admissionNumber!),
+              if ((sessionName ?? '').trim().isNotEmpty)
+                _miniPill('Session', sessionName!),
+              if ((dobPretty ?? '').trim().isNotEmpty)
+                _miniPill('DOB', dobPretty!),
+              if ((ageText ?? '').trim().isNotEmpty)
+                _miniPill('Age', ageText!),
+              if ((bloodGroup ?? '').trim().isNotEmpty)
+                _miniPill('Blood', bloodGroup!.trim()),
+              if ((routeName ?? '').trim().isNotEmpty)
+                _miniPill(
+                  'Route',
+                  routeId != null ? '${routeName!} (#$routeId)' : routeName!,
+                ),
+              if (routeCost != null)
+                _miniPill('Route Fee', currencyFormat.format(routeCost)),
+            ],
+          ),
+
+          const SizedBox(height: 14),
+
+          // Details
+          _kvRow(Icons.person, 'Father', _join2(fatherName, fatherPhone)),
+          const SizedBox(height: 10),
+          _kvRow(Icons.person_outline, 'Mother', _join2(motherName, motherPhone)),
+          const SizedBox(height: 10),
+          if ((address ?? '').trim().isNotEmpty)
+            _kvRow(Icons.home, 'Address', address!.trim()),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniPill(String k, String v) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7FAFF),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.black.withOpacity(0.05)),
+      ),
+      child: Text(
+        '$k: $v',
+        style: const TextStyle(
+          color: Colors.black87,
+          fontWeight: FontWeight.w800,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
+  Widget _kvRow(IconData icon, String label, String value) {
+    final v = value.trim().isEmpty ? '—' : value;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: const Color(0xFFF0F4FF),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.black.withOpacity(0.03)),
+          ),
+          child: Icon(icon, color: kAccent, size: 18),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label,
+                  style: const TextStyle(
+                      color: Colors.black54,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700)),
+              const SizedBox(height: 2),
+              Text(
+                v,
+                style: const TextStyle(
+                  color: Colors.black87,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _join2(String? a, String? b) {
+    final aa = (a ?? '').trim();
+    final bb = (b ?? '').trim();
+    if (aa.isEmpty && bb.isEmpty) return '—';
+    if (aa.isEmpty) return bb;
+    if (bb.isEmpty) return aa;
+    return '$aa • $bb';
+  }
+
+  String? _formatDobPretty(String? raw) {
+    final r = (raw ?? '').trim();
+    if (r.isEmpty) return null;
+    final dt = DateTime.tryParse(r);
+    if (dt == null) return r; // fallback
+    return DateFormat('d MMM yyyy').format(dt);
+  }
+
+  String? _ageFromDob(String? raw) {
+    final r = (raw ?? '').trim();
+    final dob = DateTime.tryParse(r);
+    if (dob == null) return null;
+    final now = DateTime.now();
+    int years = now.year - dob.year;
+    final hadBirthdayThisYear =
+        (now.month > dob.month) || (now.month == dob.month && now.day >= dob.day);
+    if (!hadBirthdayThisYear) years -= 1;
+    if (years < 0) return null;
+    return '$years yrs';
+  }
+
   // ------------------------- Slides panel -------------------------
   Widget _slidesPanel(int presencePct) {
-    // ✅ tap Attendance: teacher -> /my-attendance-calendar, student -> /attendance
     final slides = [
       _slideCard(
         title: isTeacher ? 'My Attendance' : 'Attendance',
@@ -692,8 +929,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.35),
                       borderRadius: BorderRadius.circular(999),
-                      border:
-                          Border.all(color: Colors.black.withOpacity(0.05)),
+                      border: Border.all(color: Colors.black.withOpacity(0.05)),
                     ),
                     child: Text(
                       trailing,
@@ -757,7 +993,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             width: 72,
             height: 72,
             decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [kAccent, Color(0xFF9B8CFF)]),
+              gradient: const LinearGradient(
+                  colors: [kAccent, Color(0xFF9B8CFF)]),
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
@@ -816,7 +1053,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       },
     ];
 
-    // Teacher-only actions
     if (isTeacher) {
       items.add({
         'label': 'Substitutions',
@@ -896,7 +1132,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               const SizedBox(height: 2),
               Text(
                 'Tap to open',
-                style: TextStyle(color: Colors.black.withOpacity(0.45), fontSize: 11),
+                style: TextStyle(
+                    color: Colors.black.withOpacity(0.45), fontSize: 11),
               ),
             ]),
           ),
@@ -950,7 +1187,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ? DateFormat.yMMMd().format(DateTime.tryParse(due) ?? DateTime.now())
             : '—';
         return ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           leading: Container(
             width: 44,
             height: 44,
@@ -998,7 +1236,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     color: Colors.black87, fontWeight: FontWeight.bold)),
             trailing: TextButton(
               onPressed: () => Navigator.pushNamed(context, '/timetable'),
-              child: const Text('Open', style: TextStyle(color: Colors.black54)),
+              child:
+                  const Text('Open', style: TextStyle(color: Colors.black54)),
             ),
           ),
           if (todayPeriods.isEmpty)
@@ -1122,8 +1361,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         else if (recentCirculars.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
-            child:
-                Text('No recent circulars', style: TextStyle(color: Colors.black54)),
+            child: Text('No recent circulars',
+                style: TextStyle(color: Colors.black54)),
           )
         else
           Column(
@@ -1178,6 +1417,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // ------------------------- Hero section -------------------------
   Widget _heroSection() {
+    final initials = _initialsFor(studentName ?? username);
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1191,17 +1432,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ],
       ),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        CircleAvatar(
-          radius: 34,
-          backgroundColor: Colors.white,
-          child: Text(
-            (studentName ?? username).isNotEmpty
-                ? (studentName ?? username)[0].toUpperCase()
-                : 'S',
-            style: const TextStyle(
-                color: kAccent, fontWeight: FontWeight.w900, fontSize: 28),
-          ),
-        ),
+        _avatar(initials),
         const SizedBox(width: 14),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1214,23 +1445,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             const SizedBox(height: 6),
             Text(
-              isTeacher
-                  ? 'Have a great day in school! ★'
-                  : 'Have a great day at school! ★',
-              style: TextStyle(color: Colors.white.withOpacity(0.95), fontSize: 13),
+              isTeacher ? 'Have a great day in school! ★' : 'Have a great day at school! ★',
+              style: TextStyle(
+                  color: Colors.white.withOpacity(0.95), fontSize: 13),
             ),
             const SizedBox(height: 10),
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: [
-                if (className != null)
-                  _chip("Class", className!, textColor: Colors.white),
-                if (sectionName != null)
-                  _chip("Section", sectionName!, textColor: Colors.white),
-                _chip(isTeacher ? "Role" : "Attendance",
-                    isTeacher ? "Teacher" : "${presencePct()}%",
-                    textColor: Colors.white),
+                if (className != null) _chip("Class", className!, textColor: Colors.white),
+                if (sectionName != null) _chip("Section", sectionName!, textColor: Colors.white),
+                if (!isTeacher && admissionNumber != null)
+                  _chip("Adm", admissionNumber!, textColor: Colors.white),
+                _chip(
+                  isTeacher ? "Role" : "Attendance",
+                  isTeacher ? "Teacher" : "${presencePct()}%",
+                  textColor: Colors.white,
+                ),
+                // ✅ extra small info
+                if (!isTeacher && (bloodGroup ?? '').trim().isNotEmpty)
+                  _chip("Blood", bloodGroup!.trim(), textColor: Colors.white),
               ],
             ),
           ]),
@@ -1249,7 +1484,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     padding: const EdgeInsets.all(4),
                     decoration: const BoxDecoration(
                         color: Colors.redAccent, shape: BoxShape.circle),
-                    constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                    constraints:
+                        const BoxConstraints(minWidth: 20, minHeight: 20),
                     child: Text(
                       '${notifications.length}',
                       style: const TextStyle(
@@ -1267,13 +1503,49 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  Widget _avatar(String initials) {
+    final u = (photoUrl ?? '').trim();
+    if (u.isNotEmpty) {
+      return CircleAvatar(
+        radius: 34,
+        backgroundColor: Colors.white,
+        backgroundImage: NetworkImage(u),
+        onBackgroundImageError: (_, __) {},
+        child: Container(),
+      );
+    }
+
+    return CircleAvatar(
+      radius: 34,
+      backgroundColor: Colors.white,
+      child: Text(
+        initials.isNotEmpty ? initials : 'S',
+        style: const TextStyle(
+            color: kAccent, fontWeight: FontWeight.w900, fontSize: 24),
+      ),
+    );
+  }
+
+  String _initialsFor(String s) {
+    final t = s.trim();
+    if (t.isEmpty) return 'S';
+    final parts = t
+        .split(RegExp(r'\s+'))
+        .where((p) => p.trim().isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return 'S';
+    if (parts.length == 1) return parts[0].substring(0, 1).toUpperCase();
+    return (parts[0].substring(0, 1) + parts[1].substring(0, 1)).toUpperCase();
+  }
+
   String _displayName() {
     final name = (studentName ?? username ?? 'Student').toString();
     return name.isEmpty ? 'Student' : name;
   }
 
-  int presencePct() =>
-      totalDays > 0 ? ((present / (totalDays > 0 ? totalDays : 1)) * 100).round() : 0;
+  int presencePct() => totalDays > 0
+      ? ((present / (totalDays > 0 ? totalDays : 1)) * 100).round()
+      : 0;
 
   Widget _chip(String label, String value, {Color textColor = Colors.white}) {
     return Container(

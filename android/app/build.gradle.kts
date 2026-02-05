@@ -21,18 +21,30 @@ android {
     // ✅ Plugins require NDK 27.x
     ndkVersion = "27.0.12077973"
 
-    // ✅ Your setup
+    // ✅ Plugins require compileSdk 36 (backward compatible)
     compileSdk = 36
 
     defaultConfig {
         applicationId = "com.pathseeker.international"
+
+        // ✅ HyperSDK works fine on 21+, you are on 24 which is ok
         minSdk = 24
         targetSdk = 36
 
-        versionCode = 31
-        versionName = "1.0.19"
+        versionCode = 38
+        versionName = "1.0.23"
 
         multiDexEnabled = true
+
+        // ✅ FIX: HyperSDK "No client-id(s) provided."
+        // Reads from android/gradle.properties: JUSPAY_CLIENT_ID=...
+        val juspayClientId =
+            (project.findProperty("JUSPAY_CLIENT_ID") as String?)?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: "hdfcmaster"
+
+        // Pass to AndroidManifest as ${juspay_client_id}
+        manifestPlaceholders["juspay_client_id"] = juspayClientId
     }
 
     signingConfigs {
@@ -107,6 +119,9 @@ android {
 dependencies {
     // Multidex
     implementation("androidx.multidex:multidex:2.0.1")
+
+    // ✅ HyperSDK Android dependency (REQUIRED)
+    implementation("in.juspay:hypersdk:2.1.16")
 
     // Desugaring support
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.3")
