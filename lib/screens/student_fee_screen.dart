@@ -95,6 +95,10 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
   /// ✅ keep raw admission (for payment body + comparisons)
   String activeAdmission = '';
 
+  /// ✅ Logged-in admission/username from token/prefs.
+  /// This remains fixed when user switches to sibling.
+  String loggedInAdmission = '';
+
   List<Map<String, dynamic>> studentsList = [];
   List<String> _roles = [];
   bool canSeeStudentSwitcher = false;
@@ -190,6 +194,30 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
     return prefs.getString('authToken') ?? prefs.getString('token');
   }
 
+  Future<String> _getLoggedInAdmission() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final stored = prefs.getString('username') ?? prefs.getString('admissionNumber');
+    if (stored != null && stored.trim().isNotEmpty) {
+      return normalizeAdmissionRaw(stored);
+    }
+
+    final token = prefs.getString('authToken') ?? prefs.getString('token');
+    if (token != null && token.trim().isNotEmpty) {
+      final payload = parseJwt(token);
+      final adm = payload?['admission_number'] ??
+          payload?['admissionNumber'] ??
+          payload?['username'] ??
+          payload?['sub'];
+
+      if (adm != null && adm.toString().trim().isNotEmpty) {
+        return normalizeAdmissionRaw(adm.toString());
+      }
+    }
+
+    return '';
+  }
+
   Future<void> _loadFamilyAndActive() async {
     final prefs = await SharedPreferences.getInstance();
     final familyJson = prefs.getString('family');
@@ -203,6 +231,7 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
     }
 
     activeAdmission = await _getActiveAdmission();
+    loggedInAdmission = await _getLoggedInAdmission();
     studentsList = <Map<String, dynamic>>[];
 
     if (family?['student'] != null) {
@@ -843,8 +872,21 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
 
       final uri = Uri.parse("$baseUrl/student-fee/create-order?mode=sdk");
 
+      final payerAdmission =
+          loggedInAdmission.isNotEmpty ? loggedInAdmission : admission;
+      final isSiblingPayment = payerAdmission != admission;
+
       final body = <String, dynamic>{
+        // Keep this for your existing backend compatibility.
         "admissionNumber": admission,
+
+        // Extra fields for sibling payment support on backend.
+        "targetAdmissionNumber": admission,
+        "selectedAdmissionNumber": admission,
+        "payerAdmissionNumber": payerAdmission,
+        "loggedInAdmissionNumber": payerAdmission,
+        "isSiblingPayment": isSiblingPayment,
+
         "amount": amount,
         "clientComputedDueAmount": amount,
         "feeHeadId": (feeHeadId != null && feeHeadId.trim().isNotEmpty)
@@ -867,7 +909,18 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
 
       if (res.statusCode != 200) {
         debugPrint("Create order failed: ${res.statusCode} ${res.body}");
-        _showSnack("Failed to create payment order");
+        String msg = "Failed to create payment order";
+        try {
+          final errJson = jsonDecode(res.body);
+          if (errJson is Map) {
+            msg = (errJson["message"] ??
+                    errJson["error"] ??
+                    errJson["details"] ??
+                    msg)
+                .toString();
+          }
+        } catch (_) {}
+        _showSnack(msg);
         return;
       }
 
