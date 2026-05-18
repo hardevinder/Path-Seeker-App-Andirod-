@@ -1,4 +1,3 @@
-// File: lib/screens/student_diary_screen.dart
 import 'dart:io';
 import 'dart:convert';
 import 'dart:async';
@@ -36,13 +35,13 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
   List<Map<String, dynamic>> students = [];
   String? activeAdmission;
   String? loggedInAdmission;
+  final Set<String> _acknowledgingDiaryIds = <String>{};
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    // Load family first, then fetch
     _loadFamily().then((_) {
       _fetchDiaries();
       _startPolling();
@@ -58,7 +57,6 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Pause polling when app in background; resume + refresh on return
     if (state == AppLifecycleState.resumed) {
       _startPolling();
       _fetchDiaries(force: true);
@@ -80,6 +78,108 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
   void _stopPolling() {
     _pollTimer?.cancel();
     _pollTimer = null;
+  }
+
+  bool _asBool(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      final v = value.toLowerCase().trim();
+      return v == 'true' || v == '1' || v == 'yes';
+    }
+    return false;
+  }
+
+  String _normalizeAdmission(dynamic value) {
+    return (value == null) ? '' : value.toString().trim();
+  }
+
+  bool _isDiaryAcknowledged(Map<String, dynamic> d) {
+    if (_asBool(d['acknowledged'])) return true;
+    if (_asBool(d['isAcknowledged'])) return true;
+    if (_asBool(d['is_acknowledged'])) return true;
+    if (_asBool(d['studentAcknowledged'])) return true;
+    if (_asBool(d['student_acknowledged'])) return true;
+    if (_asBool(d['acknowledgedByMe'])) return true;
+
+    final currentAdmission = _normalizeAdmission(activeAdmission);
+    final acknowledgements = d['acknowledgements'];
+
+    if (acknowledgements is List) {
+      for (final item in acknowledgements) {
+        if (item is Map) {
+          final ackMap = Map<String, dynamic>.from(item);
+
+          final admission = _normalizeAdmission(
+            ackMap['admission_number'] ??
+                ackMap['admissionNumber'] ??
+                ackMap['studentAdmission'] ??
+                ackMap['username'],
+          );
+
+          if (currentAdmission.isNotEmpty &&
+              admission.isNotEmpty &&
+              admission == currentAdmission) {
+            return true;
+          }
+
+          if (_asBool(ackMap['acknowledged']) ||
+              _asBool(ackMap['isAcknowledged']) ||
+              _asBool(ackMap['is_acknowledged'])) {
+            return true;
+          }
+        }
+      }
+    }
+
+    return false;
+  }
+
+  void _markDiaryAcknowledgedLocally(String id) {
+    diaryList = diaryList.map((item) {
+      final itemId = _safeStr(item['id']);
+      if (itemId != id) return item;
+
+      final updated = Map<String, dynamic>.from(item);
+      updated['acknowledged'] = true;
+      updated['isAcknowledged'] = true;
+      updated['is_acknowledged'] = true;
+      updated['studentAcknowledged'] = true;
+      updated['student_acknowledged'] = true;
+      updated['acknowledgedByMe'] = true;
+
+      final currentAdmission = _normalizeAdmission(activeAdmission);
+      final existingAcks = updated['acknowledgements'];
+
+      if (currentAdmission.isNotEmpty) {
+        final ackList = existingAcks is List
+            ? List<Map<String, dynamic>>.from(
+                existingAcks.map((e) => Map<String, dynamic>.from(e as Map)),
+              )
+            : <Map<String, dynamic>>[];
+
+        final alreadyExists = ackList.any((ack) {
+          final admission = _normalizeAdmission(
+            ack['admission_number'] ??
+                ack['admissionNumber'] ??
+                ack['studentAdmission'] ??
+                ack['username'],
+          );
+          return admission == currentAdmission;
+        });
+
+        if (!alreadyExists) {
+          ackList.add({
+            'admission_number': currentAdmission,
+            'acknowledged': true,
+          });
+        }
+
+        updated['acknowledgements'] = ackList;
+      }
+
+      return updated;
+    }).toList();
   }
 
   Future<void> _loadFamily() async {
@@ -132,7 +232,6 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
   Future<void> _fetchDiaries({bool force = false}) async {
     if (_isFetching) return;
 
-    // Avoid too-frequent requests (unless forced)
     if (!force && _lastFetchAt != null) {
       final diff = DateTime.now().difference(_lastFetchAt!);
       if (diff.inSeconds < 3) return;
@@ -163,7 +262,8 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
-          if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+          if (token != null && token.isNotEmpty)
+            'Authorization': 'Bearer $token',
         },
       );
 
@@ -184,14 +284,14 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
           error = null;
         });
       } else if (res.statusCode == 401) {
-        setState(() => error = "Unauthorized. Please login again.");
+        setState(() => error = 'Unauthorized. Please login again.');
       } else {
-        setState(() => error = "Failed to load diaries (${res.statusCode})");
+        setState(() => error = 'Failed to load diaries (${res.statusCode})');
       }
     } catch (e, st) {
       debugPrint('Diary fetch error: $e\n$st');
       if (!mounted) return;
-      setState(() => error = "Error: $e");
+      setState(() => error = 'Error: $e');
     } finally {
       _isFetching = false;
       if (!mounted) return;
@@ -200,6 +300,12 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
   }
 
   Future<void> _acknowledgeDiary(String id) async {
+    if (id.isEmpty || _acknowledgingDiaryIds.contains(id)) return;
+
+    setState(() {
+      _acknowledgingDiaryIds.add(id);
+    });
+
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('authToken');
@@ -208,7 +314,8 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
       final res = await http.post(
         Uri.parse(url),
         headers: {
-          if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+          if (token != null && token.isNotEmpty)
+            'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
         },
       );
@@ -216,9 +323,14 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
       if (!mounted) return;
 
       if (res.statusCode == 200 || res.statusCode == 201) {
+        setState(() {
+          _markDiaryAcknowledgedLocally(id);
+        });
+
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ Acknowledged')),
+          const SnackBar(content: Text('✅ Acknowledged successfully')),
         );
+
         _fetchDiaries(force: true);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -230,11 +342,16 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e')),
       );
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _acknowledgingDiaryIds.remove(id);
+      });
     }
   }
 
   String _formatDate(String? dateStr) {
-    if (dateStr == null || dateStr.isEmpty) return "";
+    if (dateStr == null || dateStr.isEmpty) return '';
     final dt = DateTime.tryParse(dateStr);
     if (dt == null) return dateStr;
     return DateFormat.yMMMd().add_jm().format(dt);
@@ -281,7 +398,6 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
 
   String _safeStr(dynamic v) => (v == null) ? '' : v.toString();
 
-  /// --- DOWNLOAD --------------------------------------------------------------
   Future<void> handleDownload(String rawUrl, String fileName) async {
     if (rawUrl.isEmpty) {
       if (!mounted) return;
@@ -324,7 +440,6 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
 
       final response = await dio.download(finalUrl, savePath);
 
-      // Close progress dialog safely
       if (mounted) {
         Navigator.of(context, rootNavigator: true).maybePop();
       }
@@ -335,7 +450,8 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
         showDialog(
           context: context,
           builder: (_) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             title: const Text('✅ File downloaded'),
             content: Text('$safeName\n\nSaved to:\n${saveDir.path}'),
             actions: [
@@ -370,8 +486,16 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
   }
 
   Widget _buildAttachmentChip(Map<String, dynamic> a) {
-    final url = _safeStr(a['url'] ?? a['fileUrl'] ?? a['filePath'] ?? a['file'] ?? a['path']);
-    final name = _safeStr(a['name'] ?? a['originalName'] ?? a['fileName'] ?? a['filename'] ?? (url.split('/').isNotEmpty ? url.split('/').last : 'Attachment'));
+    final url = _safeStr(
+      a['url'] ?? a['fileUrl'] ?? a['filePath'] ?? a['file'] ?? a['path'],
+    );
+    final name = _safeStr(
+      a['name'] ??
+          a['originalName'] ??
+          a['fileName'] ??
+          a['filename'] ??
+          (url.split('/').isNotEmpty ? url.split('/').last : 'Attachment'),
+    );
 
     return ActionChip(
       avatar: const Icon(Icons.download_rounded, size: 18),
@@ -383,7 +507,6 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
     );
   }
 
-  /// --- STUDENT SWITCHER (chips) ---------------------------------------------
   Widget _buildStudentSwitcher() {
     if (students.isEmpty) return const SizedBox.shrink();
 
@@ -397,8 +520,8 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
           children: students.map((s) {
             final adm = _safeStr(s['admission_number']);
             final isActive = adm == (activeAdmission ?? '');
-            final label =
-                (s['isSelf'] == true ? "Me • " : "") + (_safeStr(s['name']).isNotEmpty ? _safeStr(s['name']) : adm);
+            final label = (s['isSelf'] == true ? 'Me • ' : '') +
+                (_safeStr(s['name']).isNotEmpty ? _safeStr(s['name']) : adm);
 
             return ChoiceChip(
               selected: isActive,
@@ -423,7 +546,8 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
   }
 
   Widget _buildTopSummary() {
-    final last = _lastFetchAt == null ? null : DateFormat.Hm().format(_lastFetchAt!);
+    final last =
+        _lastFetchAt == null ? null : DateFormat.Hm().format(_lastFetchAt!);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
@@ -460,11 +584,11 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
       physics: const AlwaysScrollableScrollPhysics(),
       children: const [
         SizedBox(height: 140),
-        Center(child: Text("No diary entries found")),
+        Center(child: Text('No diary entries found')),
         SizedBox(height: 140),
       ],
     );
-    }
+  }
 
   Widget _buildError() {
     return Center(
@@ -473,12 +597,14 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline_rounded, size: 40, color: Colors.redAccent),
+            const Icon(Icons.error_outline_rounded,
+                size: 40, color: Colors.redAccent),
             const SizedBox(height: 10),
             Text(
               error ?? 'Something went wrong',
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w600),
+              style:
+                  const TextStyle(color: Colors.red, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 12),
             ElevatedButton.icon(
@@ -495,8 +621,12 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
   Widget _buildDiaryCard(Map<String, dynamic> d, int index) {
     final type = _safeStr(d['type']).isEmpty ? 'NOTE' : _safeStr(d['type']);
     final isExpanded = expandedIndex == index;
+    final diaryId = _safeStr(d['id']);
+    final isAcking = _acknowledgingDiaryIds.contains(diaryId);
+    final isAcknowledged = _isDiaryAcknowledged(d);
 
-    final title = _safeStr(d['title']).isEmpty ? 'Untitled' : _safeStr(d['title']);
+    final title =
+        _safeStr(d['title']).isEmpty ? 'Untitled' : _safeStr(d['title']);
     final content = _safeStr(d['content']);
     final dateStr = _formatDate(_safeStr(d['date']));
 
@@ -515,16 +645,25 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
         borderRadius: BorderRadius.circular(14),
         onTap: () {
           if (!mounted) return;
+
+          final openingNow = !isExpanded;
+
           setState(() {
             expandedIndex = isExpanded ? null : index;
           });
+
+          if (openingNow &&
+              !isAcknowledged &&
+              !isAcking &&
+              diaryId.isNotEmpty) {
+            _acknowledgeDiary(diaryId);
+          }
         },
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header (no overflow)
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -534,8 +673,6 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
                     child: Icon(_typeIcon(type), color: tint),
                   ),
                   const SizedBox(width: 10),
-
-                  // Title + date (expanded so no overflow)
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -557,8 +694,12 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
                           children: [
                             Chip(
                               visualDensity: VisualDensity.compact,
-                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              label: Text(type.toUpperCase(), style: const TextStyle(fontSize: 11)),
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                              label: Text(
+                                type.toUpperCase(),
+                                style: const TextStyle(fontSize: 11),
+                              ),
                               labelStyle: TextStyle(
                                 color: tint,
                                 fontWeight: FontWeight.w800,
@@ -566,6 +707,29 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
                               backgroundColor: Colors.white,
                               side: BorderSide(color: tint.withOpacity(0.25)),
                             ),
+                            if (isAcknowledged)
+                              Chip(
+                                visualDensity: VisualDensity.compact,
+                                materialTapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                                avatar: const Icon(
+                                  Icons.verified_rounded,
+                                  size: 16,
+                                  color: Colors.green,
+                                ),
+                                label: const Text(
+                                  'Acknowledged',
+                                  style: TextStyle(fontSize: 11),
+                                ),
+                                labelStyle: const TextStyle(
+                                  color: Colors.green,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                                backgroundColor: Colors.white,
+                                side: BorderSide(
+                                  color: Colors.green.withOpacity(0.25),
+                                ),
+                              ),
                             if (dateStr.isNotEmpty)
                               Text(
                                 dateStr,
@@ -579,7 +743,6 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
                       ],
                     ),
                   ),
-
                   const SizedBox(width: 6),
                   Icon(
                     isExpanded ? Icons.expand_less : Icons.expand_more,
@@ -587,20 +750,18 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
                   ),
                 ],
               ),
-
               const SizedBox(height: 10),
-
-              // Body (crossfade)
               AnimatedCrossFade(
                 firstChild: Text(
-                  content.length > 140 ? '${content.substring(0, 140)}…' : content,
+                  content.length > 140
+                      ? '${content.substring(0, 140)}…'
+                      : content,
                   style: const TextStyle(color: Colors.black87),
                 ),
                 secondChild: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(content, style: const TextStyle(color: Colors.black87)),
-
                     if (attachments.isNotEmpty) const SizedBox(height: 10),
                     if (attachments.isNotEmpty)
                       Wrap(
@@ -608,37 +769,86 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
                         runSpacing: 8,
                         children: attachments.map(_buildAttachmentChip).toList(),
                       ),
-
-                    const SizedBox(height: 12),
-
-                    // Actions (Wrap => no overflow)
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 8,
-                      alignment: WrapAlignment.spaceBetween,
+                    const SizedBox(height: 14),
+                    Row(
                       children: [
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.indigo,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: isAcknowledged
+                                  ? Colors.green.shade600
+                                  : Colors.indigo.shade700,
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor: isAcknowledged
+                                  ? Colors.green.shade600
+                                  : Colors.indigo.shade400,
+                              disabledForegroundColor: Colors.white,
+                              elevation: 1,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 18,
+                                vertical: 14,
+                              ),
+                              minimumSize: const Size.fromHeight(52),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            onPressed: isAcking || isAcknowledged || diaryId.isEmpty
+                                ? null
+                                : () => _acknowledgeDiary(diaryId),
+                            icon: isAcking
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.white,
+                                      ),
+                                    ),
+                                  )
+                                : Icon(
+                                    isAcknowledged
+                                        ? Icons.verified_rounded
+                                        : Icons.check_circle_rounded,
+                                    size: 20,
+                                    color: Colors.white,
+                                  ),
+                            label: Text(
+                              isAcking
+                                  ? 'Acknowledging...'
+                                  : isAcknowledged
+                                      ? 'Acknowledged'
+                                      : 'Acknowledge',
+                            ),
                           ),
-                          onPressed: () => _acknowledgeDiary(_safeStr(d['id'])),
-                          icon: const Icon(Icons.check_circle, size: 18),
-                          label: const Text('Acknowledge'),
                         ),
+                        const SizedBox(width: 12),
                         TextButton(
                           onPressed: () {
                             if (!mounted) return;
                             setState(() => expandedIndex = null);
                           },
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.indigo.shade700,
+                            textStyle: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 16,
+                            ),
+                          ),
                           child: const Text('Close'),
                         ),
                       ],
                     ),
                   ],
                 ),
-                crossFadeState:
-                    isExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+                crossFadeState: isExpanded
+                    ? CrossFadeState.showSecond
+                    : CrossFadeState.showFirst,
                 duration: const Duration(milliseconds: 220),
               ),
             ],
@@ -674,7 +884,8 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
                               ? _buildEmpty()
                               : ListView.builder(
                                   physics: const AlwaysScrollableScrollPhysics(),
-                                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                                  padding:
+                                      const EdgeInsets.fromLTRB(12, 0, 12, 12),
                                   itemCount: diaryList.length,
                                   itemBuilder: (context, index) {
                                     final d = diaryList[index];

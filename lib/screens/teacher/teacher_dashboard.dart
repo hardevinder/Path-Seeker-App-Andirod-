@@ -16,6 +16,7 @@ import '../../widgets/teacher_app_bar.dart';
 import '../../services/api_service.dart';
 import 'teacher_digital_diary_screen.dart';
 import 'teacher_my_leave_requests_screen.dart';
+import 'teacher_messages_screen.dart';
 
 
 /// Teacher Dashboard Screen
@@ -72,8 +73,10 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
   // Local Notifications
   List<Map<String, dynamic>> _notifications = [];
 
-  // Chat Metrics
-  int _chatUnread = 0;
+  // Message Metrics
+  int _messageTotal = 0;
+  int _messageUnread = 0;
+  String _latestMessagePreview = '';
 
   // Formatters
   final DateFormat _dateFormat = DateFormat('yyyy-MM-dd');
@@ -173,6 +176,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
       _fetchRecentCirculars(),
       _fetchSubstitutions(teacherId),
       _fetchRecentDiaries(),
+      _fetchMessagesSummary(),
     ].map((future) => future.catchError((_) {})));
 
     if (!mounted) return;
@@ -394,6 +398,48 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
     }
   }
 
+
+  /// Fetches teacher message summary for dashboard.
+  Future<void> _fetchMessagesSummary() async {
+    try {
+      final rows = await ApiService.fetchStudentMessages(
+        page: 1,
+        limit: 5,
+        unreadOnly: false,
+      );
+
+      int unread = 0;
+      String preview = '';
+
+      for (final row in rows) {
+        if (row.isUnread) unread++;
+
+        if (preview.isEmpty) {
+          final latest = row.thread.latestMessage;
+          if (latest != null && latest.body.trim().isNotEmpty) {
+            preview = latest.body.trim();
+          } else if (row.thread.subject.trim().isNotEmpty) {
+            preview = row.thread.subject.trim();
+          }
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _messageTotal = rows.length;
+        _messageUnread = unread;
+        _latestMessagePreview = preview;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _messageTotal = 0;
+        _messageUnread = 0;
+        _latestMessagePreview = '';
+      });
+    }
+  }
+
   // Utility Methods
 
   /// Normalizes day names for comparison.
@@ -588,6 +634,10 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
               const SizedBox(height: 10),
               _buildLeaveHighlightBanner(),
             ],
+            if (_messageUnread > 0) ...[
+              const SizedBox(height: 10),
+              _buildMessagesHighlightBanner(),
+            ],
 
             const SizedBox(height: 14),
             _buildKpiSlider(),
@@ -601,6 +651,62 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
             if (_showCoScholastic) _buildCoScholasticCard(),
             if (_showRemarks) _buildRemarksCard(),
             const SizedBox(height: 80),
+          ],
+        ),
+      ),
+    );
+  }
+
+
+  /// Highlight banner for unread teacher messages.
+  Widget _buildMessagesHighlightBanner() {
+    return GestureDetector(
+      onTap: () => _navigateTo('/teacher/messages'),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFFEFF6FF), Color(0xFFF5F3FF)],
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+          ),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFF2563EB).withOpacity(0.28)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: const Color(0xFF2563EB).withOpacity(0.14),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.mark_chat_unread_rounded,
+                  color: Color(0xFF2563EB), size: 18),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _messageUnread > 0
+                    ? '$_messageUnread unread message${_messageUnread == 1 ? '' : 's'}'
+                    : (_latestMessagePreview.isNotEmpty
+                        ? _latestMessagePreview
+                        : 'Open teacher messages'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
+            const Text(
+              'Open',
+              style: TextStyle(
+                color: Color(0xFF2563EB),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(width: 6),
+            const Icon(Icons.chevron_right, color: Color(0xFF2563EB)),
           ],
         ),
       ),
@@ -669,6 +775,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                       Icons.dashboard_rounded, 'Dashboard', _navigateToDashboard),
                   _buildDrawerListTile(Icons.calendar_today, 'Timetable',
                       () => _navigateTo('/teacher-timetable-display')),
+                  _buildDrawerListTile(Icons.forum_rounded, 'Messages',
+                      () => _navigateTo('/teacher/messages')),
                   _buildDrawerListTile(Icons.campaign, 'Circulars',
                       () => _navigateTo('/view-circulars')),
                   const Divider(),
@@ -753,15 +861,17 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
 
   // Floating Action Button
 
-  /// Builds the chat FAB with unread badge.
+  /// Builds the messages FAB with unread badge.
   Widget _buildChatFab() {
     return FloatingActionButton(
-      onPressed: () => _navigateTo('/chat'),
+      backgroundColor: const Color(0xFF2563EB),
+      onPressed: () => _navigateTo('/teacher/messages'),
       child: Stack(
+        clipBehavior: Clip.none,
         alignment: Alignment.center,
         children: [
-          const Icon(Icons.chat_bubble_outline),
-          if (_chatUnread > 0) _buildUnreadBadge(_chatUnread),
+          const Icon(Icons.forum_rounded, color: Colors.white),
+          if (_messageUnread > 0) _buildUnreadBadge(_messageUnread),
         ],
       ),
     );
@@ -895,6 +1005,12 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
         'tone': null
       },
       {
+        'icon': Icons.forum_rounded,
+        'label': 'Messages',
+        'value': _messageUnread > 0 ? _messageUnread.toString() : _messageTotal.toString(),
+        'tone': _messageUnread > 0 ? Colors.redAccent : Colors.blueAccent
+      },
+      {
         'icon': Icons.inbox,
         'label': 'Pending Leave',
         'value': _pendingLeave.toString(),
@@ -1012,6 +1128,13 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
         'route': '/teacher/attendance'
       },
       {
+        'label': 'Messages',
+        'icon': Icons.forum_rounded,
+        'route': '/teacher/messages',
+        'highlight': true,
+        'badge': _messageUnread > 0 ? _messageUnread.toString() : '',
+      },
+      {
         'label': 'Timetable',
         'icon': Icons.table_chart,
         'route': '/teacher-timetable-display'
@@ -1106,39 +1229,107 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
 
   /// Builds an individual action tile.
   Widget _buildActionTile(Map<String, dynamic> action) {
+    final bool highlighted = action['highlight'] == true;
+    final String badge = (action['badge'] ?? '').toString();
+
     return GestureDetector(
       onTap: () => _handleActionTap(action['route'] as String),
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-              colors: [Color(0xFFF8FAFF), Color(0xFFFFFFFF)]),
+          gradient: highlighted
+              ? const LinearGradient(
+                  colors: [Color(0xFF2563EB), Color(0xFF7C3AED)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : const LinearGradient(
+                  colors: [Color(0xFFF8FAFF), Color(0xFFFFFFFF)],
+                ),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.black.withOpacity(0.03)),
+          border: Border.all(
+            color: highlighted
+                ? Colors.white.withOpacity(0.45)
+                : Colors.black.withOpacity(0.03),
+          ),
+          boxShadow: highlighted
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF2563EB).withOpacity(0.22),
+                    blurRadius: 16,
+                    offset: const Offset(0, 8),
+                  ),
+                ]
+              : null,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: const Color(0xFFF3F4FF),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(action['icon'] as IconData,
-                  color: const Color(0xFF6C63FF)),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: highlighted
+                        ? Colors.white.withOpacity(0.18)
+                        : const Color(0xFFF3F4FF),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    action['icon'] as IconData,
+                    color: highlighted ? Colors.white : const Color(0xFF6C63FF),
+                  ),
+                ),
+                if (badge.isNotEmpty)
+                  Positioned(
+                    top: -7,
+                    right: -7,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: Colors.white, width: 1.5),
+                      ),
+                      child: Text(
+                        int.tryParse(badge) != null && int.parse(badge) > 99
+                            ? '99+'
+                            : badge,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const Spacer(),
             Expanded(
               child: Text(
                 action['label'] as String,
-                style:
-                    const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
+                  color: highlighted ? Colors.white : Colors.black87,
+                ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
             ),
+            if (highlighted)
+              Text(
+                _messageUnread > 0 ? 'Unread messages' : 'Open inbox',
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.86),
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
           ],
         ),
       ),
@@ -1168,6 +1359,12 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
           context,
           MaterialPageRoute(builder: (_) => const TeacherDigitalDiaryScreen()),
         );
+        break;
+      case '/teacher/messages':
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const TeacherMessagesScreen()),
+        ).then((_) => _fetchMessagesSummary());
         break;
       case '/teacher/my-leaves': // ✅ ADD THIS
         Navigator.push(

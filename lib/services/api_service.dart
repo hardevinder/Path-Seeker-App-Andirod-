@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 // import your constants with an alias to avoid top-level name collisions
 import '../constants/constants.dart' as AppConstants;
 import '../models/circular.dart';
+import '../models/student_message.dart';
 
 class ApiService {
   static const Duration _timeout = Duration(seconds: 15);
@@ -98,6 +99,173 @@ class ApiService {
     // ignore: avoid_print
     print('[ApiService] DELETE $uri → ${resp.statusCode}');
     return resp;
+  }
+
+
+  // ------------------------
+  // Student Messages
+  // ------------------------
+
+  /// Fetch logged-in student's/staff user's message inbox.
+  /// Backend:
+  /// GET /api/messages/me?page=&limit=&type=&q=&unreadOnly=
+  static Future<List<StudentMessageInboxItem>> fetchStudentMessages({
+    int page = 1,
+    int limit = 30,
+    String? type,
+    String? search,
+    bool unreadOnly = false,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/messages/me').replace(
+      queryParameters: {
+        'page': '$page',
+        'limit': '$limit',
+        if (type != null && type.trim().isNotEmpty) 'type': type.trim(),
+        if (search != null && search.trim().isNotEmpty) 'q': search.trim(),
+        'unreadOnly': unreadOnly ? 'true' : 'false',
+      },
+    );
+
+    try {
+      final headers = await _buildHeaders();
+      final resp = await http.get(uri, headers: headers).timeout(_timeout);
+
+      // ignore: avoid_print
+      print('[ApiService] GET $uri → ${resp.statusCode}');
+
+      if (resp.statusCode == 401) {
+        throw Exception('Unauthorized. Please login again.');
+      }
+
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        final decoded = jsonDecode(resp.body);
+        final rows = decoded is Map && decoded['data'] is List
+            ? decoded['data'] as List
+            : <dynamic>[];
+
+        return rows
+            .whereType<Map>()
+            .map(
+              (e) => StudentMessageInboxItem.fromJson(
+                Map<String, dynamic>.from(e),
+              ),
+            )
+            .toList();
+      }
+
+      throw Exception(_extractApiError(resp.body, 'Failed to load messages.'));
+    } on TimeoutException {
+      throw Exception('Messages request timed out.');
+    } catch (e) {
+      // ignore: avoid_print
+      print('[ApiService] fetchStudentMessages error: $e');
+      rethrow;
+    }
+  }
+
+  /// Fetch one full message thread by thread id.
+  /// Backend:
+  /// GET /api/messages/:threadId
+  static Future<StudentMessageThread> fetchStudentMessageThread(
+    int threadId,
+  ) async {
+    final uri = Uri.parse('$baseUrl/api/messages/$threadId');
+
+    try {
+      final headers = await _buildHeaders();
+      final resp = await http.get(uri, headers: headers).timeout(_timeout);
+
+      // ignore: avoid_print
+      print('[ApiService] GET $uri → ${resp.statusCode}');
+
+      if (resp.statusCode == 401) {
+        throw Exception('Unauthorized. Please login again.');
+      }
+
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        final decoded = jsonDecode(resp.body);
+        final threadJson = decoded is Map ? decoded['thread'] : null;
+
+        if (threadJson is Map) {
+          return StudentMessageThread.fromJson(
+            Map<String, dynamic>.from(threadJson),
+          );
+        }
+
+        throw Exception('Invalid message thread response.');
+      }
+
+      throw Exception(_extractApiError(resp.body, 'Failed to load message thread.'));
+    } on TimeoutException {
+      throw Exception('Message thread request timed out.');
+    } catch (e) {
+      // ignore: avoid_print
+      print('[ApiService] fetchStudentMessageThread error: $e');
+      rethrow;
+    }
+  }
+
+  /// Reply to a message thread.
+  /// Backend:
+  /// POST /api/messages/:threadId/reply
+  static Future<void> replyToStudentMessageThread({
+    required int threadId,
+    required String body,
+  }) async {
+    final cleanBody = body.trim();
+    if (cleanBody.isEmpty) {
+      throw Exception('Reply message cannot be empty.');
+    }
+
+    final uri = Uri.parse('$baseUrl/api/messages/$threadId/reply');
+
+    try {
+      final headers = await _buildHeaders({
+        'Content-Type': 'application/json',
+      });
+
+      final resp = await http
+          .post(
+            uri,
+            headers: headers,
+            body: jsonEncode({'body': cleanBody}),
+          )
+          .timeout(_timeout);
+
+      // ignore: avoid_print
+      print('[ApiService] POST $uri → ${resp.statusCode}');
+
+      if (resp.statusCode == 401) {
+        throw Exception('Unauthorized. Please login again.');
+      }
+
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        return;
+      }
+
+      throw Exception(_extractApiError(resp.body, 'Failed to send reply.'));
+    } on TimeoutException {
+      throw Exception('Reply request timed out.');
+    } catch (e) {
+      // ignore: avoid_print
+      print('[ApiService] replyToStudentMessageThread error: $e');
+      rethrow;
+    }
+  }
+
+  /// Extract common backend error messages safely.
+  static String _extractApiError(String body, String fallback) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map) {
+        final message = decoded['message'] ?? decoded['error'] ?? decoded['sqlMessage'];
+        if (message != null && message.toString().trim().isNotEmpty) {
+          return message.toString();
+        }
+      }
+    } catch (_) {}
+
+    return fallback;
   }
 
   // ------------------------

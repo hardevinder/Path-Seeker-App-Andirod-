@@ -1,14 +1,13 @@
 // lib/services/notification_service.dart
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/material.dart';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-// If you want to send token to backend:
-// import 'package:http/http.dart' as http;
-// import 'dart:convert';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../firebase_options.dart';
 import '../main.dart'; // navigatorKey
@@ -23,7 +22,8 @@ class NotificationService {
       AndroidNotificationChannel(
     'high_importance_channel', // MUST match backend channelId
     'High Importance Notifications',
-    description: 'Used for important notifications (Diary, Alerts)',
+    description:
+        'Used for important notifications (Diary, Circulars, Fee Reminders)',
     importance: Importance.high,
   );
 
@@ -50,7 +50,8 @@ class NotificationService {
 
   /// Call this once (e.g., in main after Firebase init).
   static Future<void> initialize({
-    required Future<void> Function(String token) onToken, // ✅ pass backend save function
+    required Future<void> Function(String token)
+        onToken, // ✅ pass backend save function
   }) async {
     await ensureFirebaseInitialized();
 
@@ -95,7 +96,7 @@ class NotificationService {
         await onToken(newToken);
       });
 
-      // ✅ Foreground messages → show local notification (better than dialog)
+      // ✅ Foreground messages → show local notification
       FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
         debugPrint('📩 Foreground message: ${message.notification?.title}');
         await _showLocalNotification(message);
@@ -128,14 +129,24 @@ class NotificationService {
     await _local.initialize(
       initSettings,
       onDidReceiveNotificationResponse: (resp) {
-        // You can parse payload if you set it
+        try {
+          final raw = resp.payload;
+          if (raw == null || raw.isEmpty) return;
+          final decoded = jsonDecode(raw);
+          if (decoded is Map<String, dynamic>) {
+            _handleNotificationTap(decoded);
+          } else if (decoded is Map) {
+            _handleNotificationTap(Map<String, dynamic>.from(decoded));
+          }
+        } catch (e) {
+          debugPrint('⚠️ Local notification payload parse failed: $e');
+        }
       },
     );
 
     if (Platform.isAndroid) {
-      final androidImpl = _local
-          .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>();
+      final androidImpl = _local.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
       await androidImpl?.createNotificationChannel(_androidChannel);
     }
   }
@@ -161,16 +172,42 @@ class NotificationService {
       title,
       body,
       details,
+      payload: jsonEncode(message.data),
     );
   }
 
-  static void _handleNotificationTap(Map<String, dynamic> data) {
-    // Example: backend sends { screen: 'DiaryScreen', diaryId: '12' }
+  static Future<void> _handleNotificationTap(
+    Map<String, dynamic> data,
+  ) async {
     final screen = (data['screen'] ?? '').toString();
     final diaryId = (data['diaryId'] ?? '').toString();
+    final circularId = (data['circularId'] ?? '').toString();
+    final paymentLink = (data['paymentLink'] ?? '').toString();
 
     if (screen == 'DiaryScreen' && diaryId.isNotEmpty) {
       navigatorKey.currentState?.pushNamed('/diary', arguments: diaryId);
+      return;
+    }
+
+    if (screen == 'CircularScreen' && circularId.isNotEmpty) {
+      navigatorKey.currentState?.pushNamed('/circular', arguments: circularId);
+      return;
+    }
+
+    if (screen == 'payment_link' && paymentLink.isNotEmpty) {
+      try {
+        final uri = Uri.parse(paymentLink);
+        final opened = await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+        if (!opened) {
+          debugPrint('⚠️ Could not open payment link: $paymentLink');
+        }
+      } catch (e) {
+        debugPrint('⚠️ Payment link open failed: $e');
+      }
+      return;
     }
   }
 

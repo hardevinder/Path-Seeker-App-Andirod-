@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/constants.dart';
 import '../widgets/student_app_bar.dart';
 import '../widgets/student_drawer_menu.dart';
+import 'student_messages_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -74,6 +75,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   int diaryTotal = 0;
   int diaryUnack = 0;
+
+  // Messages
+  int messageTotal = 0;
+  int messageUnread = 0;
+  String latestMessagePreview = '';
 
   // Lists
   List<Map<String, dynamic>> assignNext3 = [];
@@ -183,11 +189,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _fetchAssignments(headers),
       _fetchFees(headers),
       _fetchDiarySummary(headers),
+      _fetchMessagesSummary(headers),
       _fetchTodayTimetable(headers),
       _fetchCirculars(headers),
     ].map((future) => future.catchError((_) {})));
 
-    slideCount = 4;
+    slideCount = 5;
     _startAutoSlide();
   }
 
@@ -590,6 +597,58 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } catch (_) {}
   }
 
+  Future<void> _fetchMessagesSummary(Map<String, String> headers) async {
+    try {
+      final uri = Uri.parse('$baseUrl/api/messages/me').replace(
+        queryParameters: {
+          'page': '1',
+          'limit': '5',
+          'unreadOnly': 'false',
+        },
+      );
+
+      final res = await http.get(uri, headers: headers);
+      if (res.statusCode != 200) return;
+
+      final decoded = jsonDecode(res.body);
+      final json = _asMap(decoded);
+      final rows = _asList(json?['data']);
+      final pagination = _asMap(json?['pagination']);
+
+      final total = _intValue(pagination?['total']) ?? rows.length;
+      int unread = 0;
+      String preview = '';
+
+      for (final row in rows) {
+        final map = _asMap(row);
+        if (map == null) continue;
+
+        if (map['lastReadAt'] == null && map['last_read_at'] == null) {
+          unread++;
+        }
+
+        if (preview.isEmpty) {
+          final thread = _asMap(map['thread']);
+          final messages = _asList(thread?['messages']);
+          final latest = messages.isNotEmpty ? _asMap(messages.first) : null;
+          final body = _stringValue(latest?['body']);
+          final subject = _stringValue(thread?['subject']);
+
+          preview = body ?? subject ?? '';
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        messageTotal = total;
+        messageUnread = unread;
+        latestMessagePreview = preview;
+      });
+    } catch (e, st) {
+      debugPrint('Error fetching message summary: $e\n$st');
+    }
+  }
+
   Future<void> _fetchTodayTimetable(Map<String, String> headers) async {
     try {
       final pRes = await http.get(Uri.parse('$baseUrl/periods'), headers: headers);
@@ -892,6 +951,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     icon: Icons.school_outlined,
                     label: 'Session',
                     value: sessionName!,
+                  ),
+                if (messageUnread > 0)
+                  _heroChip(
+                    icon: Icons.mark_chat_unread_outlined,
+                    label: 'Messages',
+                    value: '$messageUnread unread',
                   ),
                 if (!isTeacher && (bloodGroup ?? '').trim().isNotEmpty)
                   _heroChip(
@@ -1402,6 +1467,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
         color: diaryUnack > 0 ? kOrange : kGreen,
         route: '/diaries',
       ),
+      _DashStat(
+        title: 'Messages',
+        value: messageUnread > 0 ? '$messageUnread' : '$messageTotal',
+        subtitle: messageUnread > 0
+            ? 'Unread of $messageTotal'
+            : '$messageTotal total messages',
+        icon: Icons.mark_chat_unread_outlined,
+        color: messageUnread > 0 ? kRed : kBlue,
+        route: '/messages',
+      ),
     ];
 
     return LayoutBuilder(
@@ -1428,7 +1503,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _statCard(_DashStat stat) {
     return InkWell(
-      onTap: () => Navigator.pushNamed(context, stat.route),
+      onTap: () => stat.route == '/messages'
+          ? _openMessages()
+          : Navigator.pushNamed(context, stat.route),
       borderRadius: BorderRadius.circular(20),
       child: Container(
         padding: const EdgeInsets.all(12),
@@ -1529,6 +1606,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
         colors: const [Color(0xFFF0FDF4), Color(0xFFDCFCE7)],
         iconColor: kGreen,
         onTap: () => Navigator.pushNamed(context, '/fee-details'),
+      ),
+      _highlightSlide(
+        title: 'Messages',
+        subtitle: latestMessagePreview.trim().isNotEmpty
+            ? latestMessagePreview
+            : 'Fee reminders & teacher replies',
+        trailing: messageUnread > 0 ? '$messageUnread unread' : '$messageTotal total',
+        icon: Icons.mark_chat_unread_rounded,
+        colors: const [Color(0xFFEFF6FF), Color(0xFFEDE9FE)],
+        iconColor: messageUnread > 0 ? kRed : kBlue,
+        onTap: _openMessages,
       ),
       _highlightSlide(
         title: 'Diary',
@@ -1784,6 +1872,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
         'badge': '$diaryUnack',
       },
       {
+        'label': 'Messages',
+        'icon': Icons.mark_chat_unread_rounded,
+        'route': '/messages',
+        'badge': messageUnread > 0 ? '$messageUnread' : 'Open',
+        'highlight': true,
+        'color': messageUnread > 0 ? kRed : kBlue,
+      },
+      {
         'label': 'Circulars',
         'icon': Icons.campaign_rounded,
         'route': '/circulars',
@@ -1853,15 +1949,45 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _quickActionTile(Map<String, dynamic> item) {
+    final route = (item['route'] ?? '').toString();
+    final isHighlighted = item['highlight'] == true;
+    final tileColor = item['color'] is Color ? item['color'] as Color : kAccent;
+    final badgeText = (item['badge'] ?? '').toString();
+
     return InkWell(
-      onTap: () => Navigator.pushNamed(context, item['route'] as String),
+      onTap: () => route == '/messages'
+          ? _openMessages()
+          : Navigator.pushNamed(context, route),
       borderRadius: BorderRadius.circular(18),
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
         padding: const EdgeInsets.all(9),
         decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFF),
+          gradient: isHighlighted
+              ? LinearGradient(
+                  colors: [
+                    tileColor,
+                    kAccent2,
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : null,
+          color: isHighlighted ? null : const Color(0xFFF8FAFF),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: kSoftBorder),
+          border: Border.all(
+            color: isHighlighted ? Colors.white.withOpacity(0.45) : kSoftBorder,
+            width: isHighlighted ? 1.4 : 1,
+          ),
+          boxShadow: isHighlighted
+              ? [
+                  BoxShadow(
+                    color: tileColor.withOpacity(0.25),
+                    blurRadius: 18,
+                    offset: const Offset(0, 10),
+                  ),
+                ]
+              : null,
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -1873,33 +1999,55 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [kAccent.withOpacity(0.13), kAccent2.withOpacity(0.10)],
-                    ),
+                    color: isHighlighted ? Colors.white.withOpacity(0.18) : null,
+                    gradient: isHighlighted
+                        ? null
+                        : LinearGradient(
+                            colors: [
+                              kAccent.withOpacity(0.13),
+                              kAccent2.withOpacity(0.10),
+                            ],
+                          ),
                     borderRadius: BorderRadius.circular(16),
+                    border: isHighlighted
+                        ? Border.all(color: Colors.white.withOpacity(0.22))
+                        : null,
                   ),
-                  child: Icon(item['icon'] as IconData, color: kAccent, size: 22),
+                  child: Icon(
+                    item['icon'] as IconData,
+                    color: isHighlighted ? Colors.white : kAccent,
+                    size: 22,
+                  ),
                 ),
-                Positioned(
-                  right: -7,
-                  top: -7,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: kSoftBorder),
-                    ),
-                    child: Text(
-                      (item['badge'] ?? '').toString(),
-                      style: const TextStyle(
-                        color: kAccent,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w900,
+                if (badgeText.isNotEmpty)
+                  Positioned(
+                    right: -7,
+                    top: -7,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: isHighlighted
+                            ? (messageUnread > 0 ? kRed : Colors.white)
+                            : Colors.white,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: isHighlighted
+                              ? Colors.white.withOpacity(0.85)
+                              : kSoftBorder,
+                        ),
+                      ),
+                      child: Text(
+                        badgeText,
+                        style: TextStyle(
+                          color: isHighlighted
+                              ? (messageUnread > 0 ? Colors.white : tileColor)
+                              : kAccent,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
                     ),
                   ),
-                ),
               ],
             ),
             const SizedBox(height: 9),
@@ -1908,13 +2056,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
               textAlign: TextAlign.center,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: kText,
+              style: TextStyle(
+                color: isHighlighted ? Colors.white : kText,
                 fontSize: 12,
                 fontWeight: FontWeight.w900,
                 height: 1.15,
               ),
             ),
+            if (isHighlighted) ...[
+              const SizedBox(height: 4),
+              Text(
+                messageUnread > 0 ? 'Unread messages' : 'Tap to open',
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.86),
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -2396,6 +2558,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (years < 0) return null;
 
     return '$years yrs';
+  }
+
+  void _openMessages() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const StudentMessagesScreen(),
+      ),
+    ).then((_) => _fetchAll());
   }
 
   void _openNotifications() {

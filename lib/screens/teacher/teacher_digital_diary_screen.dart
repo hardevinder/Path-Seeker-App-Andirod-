@@ -263,6 +263,337 @@ class _DiaryFeedTabState extends State<_DiaryFeedTab> {
     }
   }
 
+
+  String _safe(dynamic v) => v?.toString() ?? '';
+
+  Future<List<Map<String, dynamic>>> _fetchAcknowledgements(int diaryId) async {
+    final token = await _getToken();
+    if (token == null) throw Exception('No token found');
+
+    final detailHeaders = {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+    };
+
+    try {
+      final ackUri = Uri.parse('$baseUrl/diaries/$diaryId/acknowledgements');
+      final ackRes = await http.get(ackUri, headers: detailHeaders);
+
+      if (ackRes.statusCode == 200) {
+        final body = jsonDecode(ackRes.body);
+        if (body is Map && body['acknowledgements'] is List) {
+          return List<Map<String, dynamic>>.from(body['acknowledgements']);
+        }
+        if (body is Map && body['data'] is List) {
+          return List<Map<String, dynamic>>.from(body['data']);
+        }
+        if (body is List) {
+          return List<Map<String, dynamic>>.from(body);
+        }
+      }
+    } catch (_) {
+      // fallback below
+    }
+
+    final detailUri = Uri.parse('$baseUrl/diaries/$diaryId');
+    final detailRes = await http.get(detailUri, headers: detailHeaders);
+
+    if (detailRes.statusCode != 200) {
+      throw Exception('Failed to load acknowledgements (${detailRes.statusCode})');
+    }
+
+    final body = jsonDecode(detailRes.body);
+    if (body is Map && body['diary'] is Map) {
+      final diary = Map<String, dynamic>.from(body['diary']);
+      return List<Map<String, dynamic>>.from(diary['acknowledgements'] ?? []);
+    }
+    if (body is Map) {
+      return List<Map<String, dynamic>>.from(body['acknowledgements'] ?? []);
+    }
+    return [];
+  }
+
+  Widget _ackTile(Map<String, dynamic> ack) {
+    final student = ack['student'] is Map
+        ? Map<String, dynamic>.from(ack['student'])
+        : <String, dynamic>{};
+
+    final name = _safe(
+      student['name'] ?? ack['studentName'] ?? 'Student',
+    );
+    final admission = _safe(
+      student['admission_number'] ??
+          ack['admissionNumber'] ??
+          ack['admission_number'],
+    );
+    final roll = _safe(student['roll_number'] ?? ack['rollNumber']);
+    final note = _safe(ack['note']);
+    final when = _safe(ack['createdAt'] ?? ack['acknowledgedAt']);
+    String whenText = when;
+    final parsed = DateTime.tryParse(when);
+    if (parsed != null) {
+      whenText = DateFormat('dd MMM yyyy, hh:mm a').format(parsed.toLocal());
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            backgroundColor: const Color(0xFF6C63FF).withOpacity(0.12),
+            child: Text(
+              name.isNotEmpty ? name.substring(0, 1).toUpperCase() : 'S',
+              style: const TextStyle(
+                color: Color(0xFF6C63FF),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name.isEmpty ? 'Student' : name,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                if (admission.isNotEmpty)
+                  Text(
+                    'Admission No: $admission',
+                    style: const TextStyle(color: Colors.black54),
+                  ),
+                if (roll.isNotEmpty)
+                  Text(
+                    'Roll No: $roll',
+                    style: const TextStyle(color: Colors.black54),
+                  ),
+                const SizedBox(height: 6),
+                Text(
+                  'Acknowledged: $whenText',
+                  style: const TextStyle(fontSize: 12.5),
+                ),
+                if (note.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Note: $note',
+                    style: const TextStyle(color: Colors.black87),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showAcknowledgementsSheet(Map<String, dynamic> diary) async {
+    final diaryId = diary['id'] is int
+        ? diary['id'] as int
+        : int.tryParse('${diary['id']}') ?? 0;
+    if (diaryId <= 0) {
+      _snack('Invalid diary id', true);
+      return;
+    }
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) {
+        return SafeArea(
+          child: Container(
+            height: MediaQuery.of(context).size.height * 0.82,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+            ),
+            child: FutureBuilder<List<Map<String, dynamic>>>(
+              future: _fetchAcknowledgements(diaryId),
+              builder: (context, snapshot) {
+                final title = _safe(diary['title']).isEmpty
+                    ? 'Diary #$diaryId'
+                    : _safe(diary['title']);
+
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(
+                    child: CircularProgressIndicator(color: Color(0xFF6C63FF)),
+                  );
+                }
+
+                if (snapshot.hasError) {
+                  return Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 8),
+                        Container(
+                          width: 46,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade400,
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Acknowledgements',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () => Navigator.pop(context),
+                              icon: const Icon(Icons.close),
+                            ),
+                          ],
+                        ),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            title,
+                            style: const TextStyle(color: Colors.black54),
+                          ),
+                        ),
+                        const Spacer(),
+                        const Icon(
+                          Icons.error_outline,
+                          size: 42,
+                          color: Colors.redAccent,
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          '${snapshot.error}',
+                          textAlign: TextAlign.center,
+                        ),
+                        const Spacer(),
+                      ],
+                    ),
+                  );
+                }
+
+                final acks = snapshot.data ?? [];
+
+                return Column(
+                  children: [
+                    const SizedBox(height: 10),
+                    Container(
+                      width: 46,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade400,
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Acknowledgements',
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(color: Colors.black54),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF6C63FF).withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Column(
+                              children: [
+                                Text(
+                                  '${acks.length}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF6C63FF),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                const Text(
+                                  'total',
+                                  style: TextStyle(
+                                    color: Colors.black54,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            onPressed: () => Navigator.pop(context),
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: acks.isEmpty
+                          ? const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(24),
+                                child: Text(
+                                  'No acknowledgements yet.',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            )
+                          : ListView.builder(
+                              padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+                              itemCount: acks.length,
+                              itemBuilder: (_, i) => _ackTile(acks[i]),
+                            ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -342,23 +673,44 @@ class _DiaryFeedTabState extends State<_DiaryFeedTab> {
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
                                   ),
-                                  if (attachments.isNotEmpty)
-                                    TextButton.icon(
-                                      icon: const Icon(
-                                        Icons.attach_file,
-                                        size: 16,
+                                  const SizedBox(height: 6),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 6,
+                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                    children: [
+                                      if (attachments.isNotEmpty)
+                                        TextButton.icon(
+                                          icon: const Icon(
+                                            Icons.attach_file,
+                                            size: 16,
+                                          ),
+                                          label: Text(
+                                            '${attachments.length} attachment(s)',
+                                          ),
+                                          onPressed: () =>
+                                              _showAttachmentsDialog(attachments),
+                                        ),
+                                      TextButton.icon(
+                                        icon: const Icon(
+                                          Icons.check_circle_outline,
+                                          size: 16,
+                                          color: Color(0xFF6C63FF),
+                                        ),
+                                        label: Text(
+                                          '${(d['acknowledgements'] is List) ? (d['acknowledgements'] as List).length : 0} acknowledgement(s)',
+                                        ),
+                                        onPressed: () => _showAcknowledgementsSheet(d),
                                       ),
-                                      label: Text(
-                                        '${attachments.length} attachment(s)',
-                                      ),
-                                      onPressed: () =>
-                                          _showAttachmentsDialog(attachments),
-                                    ),
+                                    ],
+                                  ),
                                 ],
                               ),
                               trailing: PopupMenuButton<String>(
                                 onSelected: (v) async {
-                                  if (v == 'edit') {
+                                  if (v == 'acknowledgements') {
+                                    _showAcknowledgementsSheet(d);
+                                  } else if (v == 'edit') {
                                     await Navigator.push(
                                       context,
                                       MaterialPageRoute(
@@ -372,6 +724,16 @@ class _DiaryFeedTabState extends State<_DiaryFeedTab> {
                                   }
                                 },
                                 itemBuilder: (_) => const [
+                                  PopupMenuItem(
+                                    value: 'acknowledgements',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.check_circle_outline, color: Color(0xFF6C63FF)),
+                                        SizedBox(width: 8),
+                                        Text('Acknowledgements'),
+                                      ],
+                                    ),
+                                  ),
                                   PopupMenuItem(
                                     value: 'edit',
                                     child: Row(

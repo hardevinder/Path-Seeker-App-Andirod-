@@ -3,21 +3,19 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:http/http.dart' as http;
-import 'package:fl_chart/fl_chart.dart';
-import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:open_filex/open_filex.dart';
 import 'package:flutter_file_dialog/flutter_file_dialog.dart';
-
-// ✅ HDFC SmartGateway - HyperSDK Flutter
 import 'package:hypersdkflutter/hypersdkflutter.dart';
+import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-import '../constants/constants.dart'; // baseUrl, etc.
+import '../constants/constants.dart';
 
 /* =========================================================
   JWT + Helpers
@@ -25,7 +23,7 @@ import '../constants/constants.dart'; // baseUrl, etc.
 
 Map<String, dynamic>? parseJwt(String token) {
   try {
-    List<String> parts = token.split('.');
+    final parts = token.split('.');
     if (parts.length != 3) return null;
 
     String payload = parts[1];
@@ -43,11 +41,6 @@ Map<String, dynamic>? parseJwt(String token) {
 }
 
 String normalizeRole(String r) => r.toLowerCase().trim();
-
-/// ✅ IMPORTANT:
-/// - For API path params (where admission is inside URL path), slash `/` breaks the route.
-///   So we convert `/` -> `-` ONLY for URL path usage.
-/// - For payment create-order body, we must send RAW admission (same backend compares with req.user.username).
 String normalizeAdmissionForPath(String s) => s.replaceAll('/', '-').trim();
 String normalizeAdmissionRaw(String s) => s.trim();
 
@@ -71,56 +64,48 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
   List<dynamic> transactionHistory = [];
   Map<int, Map<String, dynamic>> vanByHead = {};
   List<bool> _expandedFees = [];
+  bool _expandedPrevBalance = true;
 
   late TabController _tabController;
   Timer? _pollTimer;
 
-  // auto scroll chips
   final ScrollController _chipScrollController = ScrollController();
   Timer? _chipTimer;
   final double _chipScrollStep = 160.0;
   final Duration _chipInterval = const Duration(seconds: 3);
   final Duration _chipAnim = const Duration(milliseconds: 600);
 
-  // KPI PageView auto-scroll
   PageController? _kpiPageController;
   Timer? _kpiPageTimer;
   int _kpiPage = 0;
   final Duration _kpiPageInterval = const Duration(seconds: 4);
   final Duration _kpiPageAnim = const Duration(milliseconds: 500);
 
-  // Student switcher
   Map<String, dynamic>? family;
-
-  /// ✅ keep raw admission (for payment body + comparisons)
   String activeAdmission = '';
-
-  /// ✅ Logged-in admission/username from token/prefs.
-  /// This remains fixed when user switches to sibling.
   String loggedInAdmission = '';
 
   List<Map<String, dynamic>> studentsList = [];
+  int? _currentStudentId;
+  bool siblingsLoading = false;
   List<String> _roles = [];
   bool canSeeStudentSwitcher = false;
 
-  // ✅ HyperSDK
   final HyperSDK _hyperSDK = HyperSDK();
   bool _hyperInitiated = false;
   bool _hyperOpening = false;
 
-  // ✅ Configure env (change to "production" when live)
-  static const String _hyperEnv = "sandbox";
-  static const String _hyperClientId = "hdfcmaster";
+  static const String _hyperEnv = 'sandbox';
+  static const String _hyperClientId = 'hdfcmaster';
 
-  // Slip downloading state (per slip id)
   final Map<String, bool> _slipDownloading = {};
 
-  // Theme
   static const Color _indigo = Color(0xFF4F46E5);
   static const Color _cyan = Color(0xFF06B6D4);
   static const Color _emerald = Color(0xFF10B981);
+  static const Color _slate = Color(0xFF0F172A);
+  static const Color _softBg = Color(0xFFF6F9FF);
 
-  // ✅ Opening Balance / Previous Balance
   int? _activeSessionId;
   int? _prevBalanceHeadId;
   double _prevBalanceDue = 0.0;
@@ -130,7 +115,7 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
     super.initState();
 
     _tabController = TabController(length: 3, vsync: this);
-    _kpiPageController = PageController(viewportFraction: 0.72);
+    _kpiPageController = PageController(viewportFraction: 0.78);
 
     _loadFamilyAndActive();
 
@@ -149,12 +134,8 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
   void dispose() {
     _tabController.dispose();
     _pollTimer?.cancel();
-
     _chipTimer?.cancel();
-    _chipTimer = null;
     _kpiPageTimer?.cancel();
-    _kpiPageTimer = null;
-
     _chipScrollController.dispose();
     _kpiPageController?.dispose();
 
@@ -172,11 +153,13 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
   Future<String> _getActiveAdmission() async {
     final prefs = await SharedPreferences.getInstance();
 
-    // ✅ we store RAW admission here (no / -> -)
-    String? storedActive = prefs.getString('activeStudentAdmission');
-    if (storedActive != null) return normalizeAdmissionRaw(storedActive);
+    final storedActive = prefs.getString('selectedStudentAdmissionNumber') ??
+        prefs.getString('activeStudentAdmission');
+    if (storedActive != null && storedActive.trim().isNotEmpty) {
+      return normalizeAdmissionRaw(storedActive);
+    }
 
-    String? stored =
+    final stored =
         prefs.getString('username') ?? prefs.getString('admissionNumber');
     if (stored != null) return normalizeAdmissionRaw(stored);
 
@@ -197,7 +180,8 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
   Future<String> _getLoggedInAdmission() async {
     final prefs = await SharedPreferences.getInstance();
 
-    final stored = prefs.getString('username') ?? prefs.getString('admissionNumber');
+    final stored =
+        prefs.getString('username') ?? prefs.getString('admissionNumber');
     if (stored != null && stored.trim().isNotEmpty) {
       return normalizeAdmissionRaw(stored);
     }
@@ -218,6 +202,24 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
     return '';
   }
 
+
+  void _buildStudentsListFromFamily() {
+    studentsList = <Map<String, dynamic>>[];
+
+    if (family?['student'] != null) {
+      final self = Map<String, dynamic>.from(family!['student']);
+      self['isSelf'] = true;
+      studentsList.add(self);
+    }
+
+    final siblingsList = family?['siblings'] as List? ?? [];
+    for (final s in siblingsList) {
+      final sib = Map<String, dynamic>.from(s);
+      sib['isSelf'] = false;
+      studentsList.add(sib);
+    }
+  }
+
   Future<void> _loadFamilyAndActive() async {
     final prefs = await SharedPreferences.getInstance();
     final familyJson = prefs.getString('family');
@@ -232,20 +234,7 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
 
     activeAdmission = await _getActiveAdmission();
     loggedInAdmission = await _getLoggedInAdmission();
-    studentsList = <Map<String, dynamic>>[];
-
-    if (family?['student'] != null) {
-      var self = Map<String, dynamic>.from(family!['student']);
-      self['isSelf'] = true;
-      studentsList.add(self);
-    }
-
-    final siblingsList = family?['siblings'] as List? ?? [];
-    for (var s in siblingsList) {
-      var sib = Map<String, dynamic>.from(s);
-      sib['isSelf'] = false;
-      studentsList.add(sib);
-    }
+    _buildStudentsListFromFamily();
 
     await _loadRoles();
     if (mounted) setState(() {});
@@ -270,7 +259,7 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
 
   Future<void> _loadRoles() async {
     final prefs = await SharedPreferences.getInstance();
-    String? stored = prefs.getString('roles');
+    final stored = prefs.getString('roles');
     if (stored != null) {
       try {
         final list = json.decode(stored) as List;
@@ -281,7 +270,7 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
     }
 
     if (_roles.isEmpty) {
-      String? single = prefs.getString('userRole');
+      final single = prefs.getString('userRole');
       if (single != null) _roles = [normalizeRole(single)];
     }
 
@@ -301,7 +290,12 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
       }
     }
 
-    canSeeStudentSwitcher = _roles.any((r) => r == 'student' || r == 'parent');
+    final activeRole =
+        (prefs.getString('activeRole') ?? '').toLowerCase().trim();
+    final isTeacherRole =
+        activeRole == 'teacher' || _roles.any((r) => r == 'teacher');
+
+    canSeeStudentSwitcher = !isTeacherRole;
   }
 
   Future<void> handleStudentSwitch(String newAdmission) async {
@@ -310,6 +304,7 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('activeStudentAdmission', raw);
+    await prefs.setString('selectedStudentAdmissionNumber', raw);
 
     if (mounted) {
       setState(() => activeAdmission = raw);
@@ -322,8 +317,189 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
   }
 
   /* =========================================================
-    Helpers: currency + safe
+    Helpers
   ========================================================= */
+
+  String? _stringValue(dynamic v) {
+    if (v == null) return null;
+    final text = v.toString().trim();
+    return text.isEmpty ? null : text;
+  }
+
+  int? _intValue(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    return int.tryParse(v.toString());
+  }
+
+  Map<String, dynamic>? _asMap(dynamic v) {
+    if (v is Map) return Map<String, dynamic>.from(v);
+    return null;
+  }
+
+  List<dynamic> _asList(dynamic v) {
+    if (v is List) return v;
+    return <dynamic>[];
+  }
+
+  String _classTextFromAny(Map<String, dynamic> student) {
+    final className = _stringValue(student['class_name']) ??
+        _stringValue(_asMap(student['Class'])?['class_name']) ??
+        _stringValue(_asMap(student['class'])?['name']) ??
+        _stringValue(_asMap(student['class'])?['class_name']) ??
+        '';
+    final sectionName = _stringValue(student['section_name']) ??
+        _stringValue(_asMap(student['Section'])?['section_name']) ??
+        _stringValue(_asMap(student['section'])?['name']) ??
+        _stringValue(_asMap(student['section'])?['section_name']) ??
+        '';
+
+    if (className.isEmpty && sectionName.isEmpty) return '';
+    if (sectionName.isEmpty) return className;
+    if (className.isEmpty) return sectionName;
+    return '$className-$sectionName';
+  }
+
+  String _studentSwitcherLabel(Map<String, dynamic> student) {
+    final admission = _stringValue(student['admission_number']) ?? '';
+    final classText = _classTextFromAny(student);
+    final name = ((student['isSelf'] ?? false) == true)
+        ? 'Me'
+        : (_stringValue(student['name']) ?? 'Student');
+
+    if (classText.isNotEmpty) return '$name · $classText';
+    if (admission.isNotEmpty) return '$name · $admission';
+    return name;
+  }
+
+  Future<void> _fetchSiblingStudentsForAdmission(
+    String token,
+    String admissionNumberRaw,
+  ) async {
+    if (!canSeeStudentSwitcher) {
+      if (mounted) {
+        setState(() {
+          siblingsLoading = false;
+        });
+      }
+      return;
+    }
+
+    if (mounted) {
+      setState(() => siblingsLoading = true);
+    }
+
+    try {
+      final admissionForPath = normalizeAdmissionForPath(admissionNumberRaw);
+      final profileRes = await http.get(
+        Uri.parse('$baseUrl/students/admission/$admissionForPath'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      if (profileRes.statusCode != 200) {
+        throw Exception('student profile fetch failed');
+      }
+
+      final profileJson = jsonDecode(profileRes.body);
+      final profile = _asMap(profileJson) ?? <String, dynamic>{};
+      final currentStudentId = _intValue(profile['id']);
+      _currentStudentId = currentStudentId;
+
+      final currentAdmission = _stringValue(profile['admission_number']) ??
+          _stringValue(profile['admissionNumber']) ??
+          admissionNumberRaw;
+
+      final currentStudent = <String, dynamic>{
+        'id': currentStudentId,
+        'name': _stringValue(profile['name']) ??
+            _stringValue(studentDetails?['name']) ??
+            'Current Student',
+        'admission_number': currentAdmission,
+        'class_name': _stringValue(_asMap(profile['Class'])?['class_name']) ??
+            _stringValue(profile['class_name']) ??
+            _stringValue(studentDetails?['class_name']),
+        'section_name': _stringValue(_asMap(profile['Section'])?['section_name']) ??
+            _stringValue(profile['section_name']) ??
+            _stringValue(studentDetails?['section_name']),
+        'photo_url': _stringValue(profile['photo_url']) ??
+            _stringValue(profile['photoUrl']),
+        'isSelf': normalizeAdmissionRaw(currentAdmission) == loggedInAdmission,
+        'is_current': true,
+      };
+
+      final items = <Map<String, dynamic>>[currentStudent];
+
+      if (currentStudentId != null) {
+        final siblingsRes = await http.get(
+          Uri.parse('$baseUrl/students/$currentStudentId/siblings-with-due'),
+          headers: {'Authorization': 'Bearer $token'},
+        );
+
+        if (siblingsRes.statusCode == 200) {
+          final siblingsJson = _asMap(jsonDecode(siblingsRes.body)) ?? {};
+          final siblings = _asList(siblingsJson['siblings']);
+
+          for (final item in siblings) {
+            final map = _asMap(item);
+            if (map == null) continue;
+
+            final adm = _stringValue(map['admission_number']);
+            if (adm == null || normalizeAdmissionRaw(adm) == normalizeAdmissionRaw(currentAdmission)) {
+              continue;
+            }
+
+            items.add({
+              'id': map['id'],
+              'name': _stringValue(map['name']) ?? 'Sibling',
+              'admission_number': adm,
+              'class_name': _stringValue(_asMap(map['Class'])?['class_name']) ??
+                  _stringValue(map['class_name']) ??
+                  _stringValue(_asMap(map['class'])?['name']) ??
+                  _stringValue(_asMap(map['class'])?['class_name']),
+              'section_name': _stringValue(_asMap(map['Section'])?['section_name']) ??
+                  _stringValue(map['section_name']) ??
+                  _stringValue(_asMap(map['section'])?['name']) ??
+                  _stringValue(_asMap(map['section'])?['section_name']),
+              'isSelf': normalizeAdmissionRaw(adm) == loggedInAdmission,
+              'is_current': false,
+            });
+          }
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          studentsList = items;
+          siblingsLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('fetchSiblingStudentsForAdmission error: $e');
+      _buildStudentsListFromFamily();
+      if (studentDetails != null) {
+        final currentAdmission = _stringValue(studentDetails?['admissionNumber']) ??
+            _stringValue(studentDetails?['admission_number']) ??
+            admissionNumberRaw;
+
+        if (!studentsList.any((s) =>
+            normalizeAdmissionRaw(_stringValue(s['admission_number']) ?? '') ==
+            normalizeAdmissionRaw(currentAdmission))) {
+          studentsList.insert(0, {
+            'name': _stringValue(studentDetails?['name']) ?? 'Student',
+            'admission_number': currentAdmission,
+            'class_name': _stringValue(studentDetails?['class_name']),
+            'section_name': _stringValue(studentDetails?['section_name']),
+            'isSelf': normalizeAdmissionRaw(currentAdmission) == loggedInAdmission,
+            'is_current': true,
+          });
+        }
+      }
+
+      if (mounted) {
+        setState(() => siblingsLoading = false);
+      }
+    }
+  }
 
   void _showSnack(String msg) {
     if (!mounted) return;
@@ -352,10 +528,10 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
     return double.tryParse(v.toString()) ?? 0.0;
   }
 
-  String _safeStr(dynamic v) => (v == null) ? '' : v.toString().trim();
+  String _safeStr(dynamic v) => v == null ? '' : v.toString().trim();
 
   /* =========================================================
-    Fine helpers (match React)
+    Fine helpers
   ========================================================= */
 
   double _feeFineTotal(dynamic fee) {
@@ -385,7 +561,6 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
     return due > 0 ? due : 0.0;
   }
 
-  // txn fine for history
   double _txnFine(dynamic txn) {
     if (txn is! Map) return 0.0;
     final raw = txn['Fine'] ??
@@ -400,7 +575,7 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
   }
 
   /* =========================================================
-    Session + Opening Balance (Previous Balance)
+    Session + Previous Balance
   ========================================================= */
 
   Future<void> _fetchActiveSessionId(String token) async {
@@ -430,8 +605,7 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
       active ??= (list.isNotEmpty && list.first is Map) ? list.first : null;
 
       if (active != null) {
-        final id = int.tryParse(active['id'].toString());
-        _activeSessionId = id;
+        _activeSessionId = int.tryParse(active['id'].toString());
       } else {
         _activeSessionId = null;
       }
@@ -457,7 +631,10 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
 
       for (final h in list) {
         if (h is! Map) continue;
-        final name = (h['fee_heading'] ?? h['FeeHeading'] ?? '').toString().toLowerCase().trim();
+        final name = (h['fee_heading'] ?? h['FeeHeading'] ?? '')
+            .toString()
+            .toLowerCase()
+            .trim();
         if (name == 'previous balance') {
           _prevBalanceHeadId = int.tryParse(h['id'].toString());
           break;
@@ -468,15 +645,21 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
     }
   }
 
-  Future<void> _fetchOpeningBalanceOutstandingForMe(String token) async {
+  Future<void> _fetchOpeningBalanceOutstanding(String token, String admission) async {
     try {
       if (_activeSessionId == null) {
         _prevBalanceDue = 0;
         return;
       }
 
-      final uri = Uri.parse('$baseUrl/opening-balances/outstanding')
-          .replace(queryParameters: {'session_id': _activeSessionId.toString()});
+      final uri = Uri.parse('$baseUrl/opening-balances/outstanding').replace(
+        queryParameters: {
+          'session_id': _activeSessionId.toString(),
+          'admissionNumber': admission,
+          'selectedAdmissionNumber': admission,
+          'targetAdmissionNumber': admission,
+        },
+      );
 
       final res = await http.get(
         uri,
@@ -504,7 +687,7 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
   }
 
   /* =========================================================
-    Transport applicability (match React logic)
+    Transport helpers
   ========================================================= */
 
   bool _isTransportApplicableForFee(Map fee) {
@@ -516,11 +699,7 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
 
     if (raw == false || raw == 0 || raw == '0') return false;
     if (raw == true || raw == 1 || raw == '1') return true;
-
-    // if transport object exists, treat as applicable
     if (fee['transport'] != null) return true;
-
-    // default: NOT applicable
     return false;
   }
 
@@ -552,10 +731,8 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
     if (feeRaw == null || feeRaw is! Map) return null;
     final fee = Map<String, dynamic>.from(feeRaw);
 
-    // ✅ IMPORTANT: only show if applicable
     if (!_isTransportApplicableForFee(fee)) return null;
 
-    // API transport object
     if (fee['transport'] != null) {
       try {
         final t = Map<String, dynamic>.from(fee['transport']);
@@ -576,7 +753,6 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
       } catch (_) {}
     }
 
-    // fallback map ONLY when applicable
     return getVanForHeadFromMap(fee['fee_heading_id'] ?? fee['feeHeadId']);
   }
 
@@ -584,12 +760,14 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
     final sd = studentDetails;
     if (sd == null) return false;
 
-    final global =
-        sd['transportApplicable'] ?? sd['transport_applicable'] ?? sd['is_transport_applicable'];
+    final global = sd['transportApplicable'] ??
+        sd['transport_applicable'] ??
+        sd['is_transport_applicable'];
     if (global == false || global == 0 || global == '0') return false;
 
     final fees = (sd['feeDetails'] as List?) ?? [];
-    final anyHead = fees.any((f) => f is Map && _isTransportApplicableForFee(Map.from(f)));
+    final anyHead =
+        fees.any((f) => f is Map && _isTransportApplicableForFee(Map.from(f)));
 
     final v = sd['vanFee'];
     final cost = _num((v is Map) ? (v['perHeadTotalDue'] ?? v['transportCost']) : 0);
@@ -600,7 +778,7 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
   }
 
   /* =========================================================
-    Previous slabs auto inclusion (match React)
+    Previous slabs auto inclusion
   ========================================================= */
 
   Map<String, dynamic> _computePreviousSlabsTotals(int untilIndex) {
@@ -655,17 +833,17 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
     });
 
     try {
-      // OB prerequisites
       await _fetchActiveSessionId(token);
       await _ensurePrevBalanceHeadId(token);
 
       await Future.wait([
         _fetchStudentDetails(admission, token),
         _fetchTransactionHistory(admission, token),
-        _fetchVanFeeByHead(token),
+        _fetchVanFeeByHead(token, admission: admission),
+        _fetchSiblingStudentsForAdmission(token, admission),
       ]);
 
-      await _fetchOpeningBalanceOutstandingForMe(token);
+      await _fetchOpeningBalanceOutstanding(token, admission);
     } catch (e, st) {
       debugPrint('loadAllForAdmission error $e\n$st');
       if (mounted) setState(() => error = 'Failed to load data');
@@ -684,9 +862,9 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
       await Future.wait([
         _fetchStudentDetails(admission, token),
         _fetchTransactionHistory(admission, token),
-        _fetchVanFeeByHead(token),
+        _fetchVanFeeByHead(token, admission: admission),
       ]);
-      await _fetchOpeningBalanceOutstandingForMe(token);
+      await _fetchOpeningBalanceOutstanding(token, admission);
       if (mounted) setState(() {});
     } catch (e) {
       debugPrint('partial refresh failed: $e');
@@ -747,7 +925,8 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
           if (jsonObj is Map &&
               jsonObj['success'] == true &&
               jsonObj['data'] is List) {
-            setState(() => transactionHistory = List<dynamic>.from(jsonObj['data']));
+            setState(() =>
+                transactionHistory = List<dynamic>.from(jsonObj['data']));
           } else if (jsonObj is List) {
             setState(() => transactionHistory = List<dynamic>.from(jsonObj));
           } else {
@@ -762,10 +941,17 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
     }
   }
 
-  Future<void> _fetchVanFeeByHead(String token) async {
+  Future<void> _fetchVanFeeByHead(String token, {required String admission}) async {
     try {
+      final normalizedAdmission = normalizeAdmissionRaw(admission);
+      final uri = normalizedAdmission.isNotEmpty
+          ? Uri.parse('$baseUrl/transactions/vanfee/me').replace(
+              queryParameters: {'admission_number': normalizedAdmission},
+            )
+          : Uri.parse('$baseUrl/transactions/vanfee/me');
+
       final res = await http.get(
-        Uri.parse('$baseUrl/transactions/vanfee/me'),
+        uri,
         headers: {'Authorization': 'Bearer $token'},
       );
 
@@ -815,27 +1001,27 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
         return;
       }
     } catch (e) {
-      debugPrint("HyperSDK check error: $e");
+      debugPrint('HyperSDK check error: $e');
     }
 
     final initiatePayload = {
-      "requestId": DateTime.now().millisecondsSinceEpoch.toString(),
-      "service": "in.juspay.hyperpay",
-      "payload": {
-        "clientId": _hyperClientId,
-        "environment": _hyperEnv,
+      'requestId': DateTime.now().millisecondsSinceEpoch.toString(),
+      'service': 'in.juspay.hyperpay',
+      'payload': {
+        'clientId': _hyperClientId,
+        'environment': _hyperEnv,
       }
     };
 
     try {
       await _hyperSDK.initiate(initiatePayload, (MethodCall call) {
-        debugPrint("HyperSDK initiate cb: ${call.method} ${call.arguments}");
+        debugPrint('HyperSDK initiate cb: ${call.method} ${call.arguments}');
       });
 
       final ok = await _hyperSDK.isInitialised();
       _hyperInitiated = ok == true;
     } catch (e, st) {
-      debugPrint("HyperSDK initiate FAILED: $e\n$st");
+      debugPrint('HyperSDK initiate FAILED: $e\n$st');
       _hyperInitiated = false;
     }
   }
@@ -844,18 +1030,15 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
     try {
       final uri = Uri.parse(url);
       final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!ok) _showSnack("Could not open link");
+      if (!ok) _showSnack('Could not open link');
     } catch (e) {
-      debugPrint("openUrlExternal error: $e");
-      _showSnack("Invalid link");
+      debugPrint('openUrlExternal error: $e');
+      _showSnack('Invalid link');
     }
   }
 
-  /// ✅ Payment open:
-  /// - If backend returns processPayload -> open HyperSDK
-  /// - Else if backend returns paymentPageUrl -> open external browser
   Future<void> _openHyperPayment({
-    required String admission, // RAW admission (important)
+    required String admission,
     required double amount,
     String? feeHeadId,
     required Map<String, dynamic> extraBody,
@@ -866,58 +1049,52 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
     try {
       final token = await _getToken();
       if (token == null || token.isEmpty) {
-        _showSnack("Missing auth token. Please login again.");
+        _showSnack('Missing auth token. Please login again.');
         return;
       }
 
-      final uri = Uri.parse("$baseUrl/student-fee/create-order?mode=sdk");
+      final uri = Uri.parse('$baseUrl/student-fee/create-order?mode=sdk');
 
       final payerAdmission =
           loggedInAdmission.isNotEmpty ? loggedInAdmission : admission;
       final isSiblingPayment = payerAdmission != admission;
 
       final body = <String, dynamic>{
-        // Keep this for your existing backend compatibility.
-        "admissionNumber": admission,
-
-        // Extra fields for sibling payment support on backend.
-        "targetAdmissionNumber": admission,
-        "selectedAdmissionNumber": admission,
-        "payerAdmissionNumber": payerAdmission,
-        "loggedInAdmissionNumber": payerAdmission,
-        "isSiblingPayment": isSiblingPayment,
-
-        "amount": amount,
-        "clientComputedDueAmount": amount,
-        "feeHeadId": (feeHeadId != null && feeHeadId.trim().isNotEmpty)
+        'admissionNumber': admission,
+        'targetAdmissionNumber': admission,
+        'selectedAdmissionNumber': admission,
+        'payerAdmissionNumber': payerAdmission,
+        'loggedInAdmissionNumber': payerAdmission,
+        'isSiblingPayment': isSiblingPayment,
+        'amount': amount,
+        'clientComputedDueAmount': amount,
+        'feeHeadId': (feeHeadId != null && feeHeadId.trim().isNotEmpty)
             ? feeHeadId.trim()
-            : "VAN_FEE",
-        "gateway": "hdfc",
+            : 'VAN_FEE',
+        'gateway': 'hdfc',
         ...extraBody,
       };
 
       final res = await http.post(
         uri,
         headers: {
-          "Authorization": "Bearer $token",
-          "Content-Type": "application/json",
-          "Accept": "application/json",
-          "x-client": "flutter",
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'x-client': 'flutter',
         },
         body: jsonEncode(body),
       );
 
       if (res.statusCode != 200) {
-        debugPrint("Create order failed: ${res.statusCode} ${res.body}");
-        String msg = "Failed to create payment order";
+        debugPrint('Create order failed: ${res.statusCode} ${res.body}');
+        String msg = 'Failed to create payment order';
         try {
           final errJson = jsonDecode(res.body);
           if (errJson is Map) {
-            msg = (errJson["message"] ??
-                    errJson["error"] ??
-                    errJson["details"] ??
-                    msg)
-                .toString();
+            msg =
+                (errJson['message'] ?? errJson['error'] ?? errJson['details'] ?? msg)
+                    .toString();
           }
         } catch (_) {}
         _showSnack(msg);
@@ -927,28 +1104,28 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
       final jsonObj = jsonDecode(res.body);
 
       dynamic processPayload =
-          (jsonObj is Map ? jsonObj["processPayload"] : null) ??
-              (jsonObj is Map && jsonObj["data"] is Map
-                  ? (jsonObj["data"] as Map)["processPayload"]
+          (jsonObj is Map ? jsonObj['processPayload'] : null) ??
+              (jsonObj is Map && jsonObj['data'] is Map
+                  ? (jsonObj['data'] as Map)['processPayload']
                   : null) ??
-              (jsonObj is Map ? jsonObj["payload"] : null) ??
-              (jsonObj is Map && jsonObj["data"] is Map
-                  ? (jsonObj["data"] as Map)["payload"]
+              (jsonObj is Map ? jsonObj['payload'] : null) ??
+              (jsonObj is Map && jsonObj['data'] is Map
+                  ? (jsonObj['data'] as Map)['payload']
                   : null);
 
       if (processPayload == null &&
           jsonObj is Map &&
-          jsonObj["data"] is Map &&
-          (jsonObj["data"]["process_payload"] != null)) {
-        processPayload = (jsonObj["data"] as Map)["process_payload"];
+          jsonObj['data'] is Map &&
+          (jsonObj['data']['process_payload'] != null)) {
+        processPayload = (jsonObj['data'] as Map)['process_payload'];
       }
 
       String paymentPageUrl = '';
       if (jsonObj is Map) {
-        paymentPageUrl = (jsonObj["paymentPageUrl"] ?? "").toString().trim();
-        if (paymentPageUrl.isEmpty && jsonObj["data"] is Map) {
+        paymentPageUrl = (jsonObj['paymentPageUrl'] ?? '').toString().trim();
+        if (paymentPageUrl.isEmpty && jsonObj['data'] is Map) {
           paymentPageUrl =
-              ((jsonObj["data"] as Map)["paymentPageUrl"] ?? "").toString().trim();
+              ((jsonObj['data'] as Map)['paymentPageUrl'] ?? '').toString().trim();
         }
       }
 
@@ -958,7 +1135,7 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
           if (mounted) await _loadPartial();
           return;
         }
-        _showSnack("Invalid payment payload from server");
+        _showSnack('Invalid payment payload from server');
         return;
       }
 
@@ -969,31 +1146,40 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
           if (mounted) await _loadPartial();
           return;
         }
-        _showSnack("Payment SDK not initialized");
+        _showSnack('Payment SDK not initialized');
         return;
       }
 
       await _hyperSDK.processWithActivity(processPayload, (MethodCall call) async {
-        debugPrint("HyperSDK cb: ${call.method} ${call.arguments}");
+        debugPrint('HyperSDK cb: ${call.method} ${call.arguments}');
         if (mounted) await _loadPartial();
       });
     } catch (e, st) {
-      debugPrint("_openHyperPayment error: $e\n$st");
-      _showSnack("Payment failed to start");
+      debugPrint('_openHyperPayment error: $e\n$st');
+      _showSnack('Payment failed to start');
     } finally {
       _hyperOpening = false;
     }
   }
 
   /* =========================================================
-    Slip Download / Open (kept)
+    Slip Download / Open
   ========================================================= */
 
   Future<Uint8List?> _fetchSlipPdfBytes(String slipId) async {
     final token = await _getToken();
     if (token == null || token.isEmpty) return null;
 
-    final uri = Uri.parse('$baseUrl/transactions/slip/$slipId/me');
+    final selectedAdmission = activeAdmission.isNotEmpty
+        ? normalizeAdmissionRaw(activeAdmission)
+        : normalizeAdmissionRaw(await _getActiveAdmission());
+
+    final uri = selectedAdmission.isNotEmpty
+        ? Uri.parse('$baseUrl/transactions/slip/$slipId/me').replace(
+            queryParameters: {'admission_number': selectedAdmission},
+          )
+        : Uri.parse('$baseUrl/transactions/slip/$slipId/me');
+
     final res = await http.get(
       uri,
       headers: {
@@ -1011,7 +1197,8 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
         bytes[2] == 0x44 &&
         bytes[3] == 0x46;
 
-    if (res.statusCode == 200 && (ct.contains('application/pdf') || startsWithPdf)) {
+    if (res.statusCode == 200 &&
+        (ct.contains('application/pdf') || startsWithPdf)) {
       return bytes;
     }
 
@@ -1068,7 +1255,8 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
         return;
       }
 
-      final tempFile = await _writeBytesToTempPdf(bytes, 'fee_slip_$slipId.pdf');
+      final tempFile =
+          await _writeBytesToTempPdf(bytes, 'fee_slip_$slipId.pdf');
       if (tempFile == null) {
         _showSnack('Unable to save slip');
         return;
@@ -1093,7 +1281,7 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
   }
 
   /* =========================================================
-    Payment handlers (UPDATED)
+    Payment handlers
   ========================================================= */
 
   Future<bool> _confirmPaymentDialog({
@@ -1108,13 +1296,16 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
           barrierDismissible: true,
           builder: (_) {
             return AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-              title: Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18)),
+              title:
+                  Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
               content: SingleChildScrollView(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Breakup', style: TextStyle(fontWeight: FontWeight.w900)),
+                    const Text('Breakup',
+                        style: TextStyle(fontWeight: FontWeight.w900)),
                     const SizedBox(height: 10),
                     ...rows.map((r) {
                       return Padding(
@@ -1124,7 +1315,8 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
                           children: [
                             Flexible(child: Text(r['k'] ?? '')),
                             const SizedBox(width: 10),
-                            Text(r['v'] ?? '', style: const TextStyle(fontWeight: FontWeight.w900)),
+                            Text(r['v'] ?? '',
+                                style: const TextStyle(fontWeight: FontWeight.w900)),
                           ],
                         ),
                       );
@@ -1133,8 +1325,10 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('Total', style: TextStyle(fontWeight: FontWeight.w900)),
-                        Text(totalText, style: const TextStyle(fontWeight: FontWeight.w900)),
+                        const Text('Total',
+                            style: TextStyle(fontWeight: FontWeight.w900)),
+                        Text(totalText,
+                            style: const TextStyle(fontWeight: FontWeight.w900)),
                       ],
                     ),
                   ],
@@ -1148,7 +1342,8 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _indigo,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                   onPressed: () => Navigator.pop(context, true),
                   child: const Text('Pay Now'),
@@ -1172,8 +1367,8 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
     final prevCount = (prev['count'] as int?) ?? 0;
 
     final openingBalanceDue = _prevBalanceDue;
-
-    final dueAmount = academicDue + fineDue + vanDueHead + prevTotal + openingBalanceDue;
+    final dueAmount =
+        academicDue + fineDue + vanDueHead + prevTotal + openingBalanceDue;
 
     if (!dueAmount.isFinite || dueAmount <= 0) {
       _showSnack('Nothing due to pay');
@@ -1209,28 +1404,28 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
         (fee['fee_heading_id'] ?? fee['feeHeadId'] ?? '').toString().trim();
 
     await _openHyperPayment(
-      admission: activeAdmission, // RAW
+      admission: activeAdmission,
       amount: dueAmount,
       feeHeadId: feeHeadId.isNotEmpty ? feeHeadId : null,
       extraBody: {
-        "fineAmount": fineDue,
-        "vanFeeAmount": vanDueHead,
-        "openingBalanceAmount": openingBalanceDue,
-        "openingBalanceHeadId": _prevBalanceHeadId,
-        "previousSlabs": prev['items'] ?? [],
-        "previousSlabsTotal": prevTotal,
-        "breakdown": {
-          "academicDue": academicDue,
-          "fineDue": fineDue,
-          "vanDueHead": vanDueHead,
-          "openingBalanceDue": openingBalanceDue,
-          "previous": {
-            "total": prevTotal,
-            "academic": _num(prev['totalAcademic']),
-            "fine": _num(prev['totalFine']),
-            "van": _num(prev['totalVan']),
-            "count": prevCount,
-            "items": prev['items'] ?? [],
+        'fineAmount': fineDue,
+        'vanFeeAmount': vanDueHead,
+        'openingBalanceAmount': openingBalanceDue,
+        'openingBalanceHeadId': _prevBalanceHeadId,
+        'previousSlabs': prev['items'] ?? [],
+        'previousSlabsTotal': prevTotal,
+        'breakdown': {
+          'academicDue': academicDue,
+          'fineDue': fineDue,
+          'vanDueHead': vanDueHead,
+          'openingBalanceDue': openingBalanceDue,
+          'previous': {
+            'total': prevTotal,
+            'academic': _num(prev['totalAcademic']),
+            'fine': _num(prev['totalFine']),
+            'van': _num(prev['totalVan']),
+            'count': prevCount,
+            'items': prev['items'] ?? [],
           }
         },
       },
@@ -1245,7 +1440,8 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
     final vanCost = _num(van['perHeadTotalDue'] ?? van['transportCost']);
     final received = _num(van['totalVanFeeReceived']);
     final concession = _num(van['totalVanFeeConcession']);
-    final vanDueOnly = (vanCost - (received + concession)).clamp(0, double.infinity);
+    final vanDueOnly =
+        (vanCost - (received + concession)).clamp(0, double.infinity);
 
     final openingBalanceDue = _prevBalanceDue;
     final totalToPay = vanDueOnly + openingBalanceDue;
@@ -1269,17 +1465,52 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
     await _openHyperPayment(
       admission: activeAdmission,
       amount: totalToPay,
-      feeHeadId: "VAN_FEE",
+      feeHeadId: 'VAN_FEE',
       extraBody: {
-        "openingBalanceAmount": openingBalanceDue,
-        "openingBalanceHeadId": _prevBalanceHeadId,
-        "breakdown": {"vanDue": vanDueOnly, "openingBalanceDue": openingBalanceDue},
+        'openingBalanceAmount': openingBalanceDue,
+        'openingBalanceHeadId': _prevBalanceHeadId,
+        'breakdown': {
+          'vanDue': vanDueOnly,
+          'openingBalanceDue': openingBalanceDue,
+        },
+      },
+    );
+  }
+
+  Future<void> handlePayPreviousBalanceOnly() async {
+    final openingBalanceDue = _prevBalanceDue;
+
+    if (openingBalanceDue <= 0) {
+      _showSnack('No previous balance due');
+      return;
+    }
+
+    final ok = await _confirmPaymentDialog(
+      title: 'Pay ${formatINR(openingBalanceDue)}?',
+      rows: [
+        {'k': 'Previous Balance', 'v': formatINR(openingBalanceDue)},
+      ],
+      totalText: formatINR(openingBalanceDue),
+    );
+
+    if (!ok) return;
+
+    await _openHyperPayment(
+      admission: activeAdmission,
+      amount: openingBalanceDue,
+      feeHeadId: _prevBalanceHeadId?.toString(),
+      extraBody: {
+        'openingBalanceAmount': openingBalanceDue,
+        'openingBalanceHeadId': _prevBalanceHeadId,
+        'breakdown': {
+          'openingBalanceDue': openingBalanceDue,
+        },
       },
     );
   }
 
   /* =========================================================
-    Totals (UPDATED: Fine remaining + OB)
+    Totals
   ========================================================= */
 
   Map<String, double> _calcTotals() {
@@ -1322,8 +1553,25 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
       'vanCost': vanCost,
       'vanReceived': vanReceived,
       'vanConcession': vanConcession,
-      'vanDue': (vanCost - (vanReceived + vanConcession))
-          .clamp(0, double.infinity),
+      'vanDue':
+          (vanCost - (vanReceived + vanConcession)).clamp(0, double.infinity),
+    };
+  }
+
+  Map<String, double> _calcPayableSummary() {
+    final totals = _calcTotals();
+
+    final academicDue = totals['due'] ?? 0.0;
+    final fineDue = totals['fineRemaining'] ?? 0.0;
+    final vanDue = totals['vanDue'] ?? 0.0;
+    final prevBalanceDue = totals['prevBalanceDue'] ?? 0.0;
+
+    return {
+      'academicDue': academicDue,
+      'fineDue': fineDue,
+      'vanDue': vanDue,
+      'prevBalanceDue': prevBalanceDue,
+      'totalPayable': academicDue + fineDue + vanDue + prevBalanceDue,
     };
   }
 
@@ -1347,7 +1595,7 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
       Colors.red.shade400,
       Colors.teal.shade400,
       Colors.indigo.shade400,
-      Colors.cyan.shade400
+      Colors.cyan.shade400,
     ];
 
     int colorIndex = 0;
@@ -1363,15 +1611,20 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
       final color = colors[colorIndex % colors.length];
       colorIndex++;
 
-      sections.add(PieChartSectionData(
-        value: val,
-        color: color,
-        title:
-            '${title.length > 14 ? title.substring(0, 14) : title}\n${NumberFormat.compactCurrency(locale: 'en_IN', symbol: '₹').format(val)}',
-        radius: 74,
-        titleStyle: const TextStyle(
-            fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
-      ));
+      sections.add(
+        PieChartSectionData(
+          value: val,
+          color: color,
+          title:
+              '${title.length > 14 ? title.substring(0, 14) : title}\n${NumberFormat.compactCurrency(locale: 'en_IN', symbol: '₹').format(val)}',
+          radius: 74,
+          titleStyle: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+      );
     }
 
     if (sections.isEmpty) {
@@ -1386,12 +1639,14 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
         padding: const EdgeInsets.all(12),
         child: SizedBox(
           height: 320,
-          child: PieChart(PieChartData(
-            sections: sections,
-            centerSpaceRadius: 46,
-            sectionsSpace: 4,
-            pieTouchData: PieTouchData(enabled: true),
-          )),
+          child: PieChart(
+            PieChartData(
+              sections: sections,
+              centerSpaceRadius: 46,
+              sectionsSpace: 4,
+              pieTouchData: PieTouchData(enabled: true),
+            ),
+          ),
         ),
       ),
     );
@@ -1413,39 +1668,49 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
       Colors.green.shade400,
     ];
 
-    List<PieChartSectionData> list = [];
+    final List<PieChartSectionData> list = [];
     for (int i = 0; i < vals.length; i++) {
       final v = vals[i];
       if (v <= 0) {
         list.add(PieChartSectionData(
-            value: 0.0001, color: colors[i], showTitle: false, radius: 40));
-      } else {
-        list.add(PieChartSectionData(
-          value: v,
+          value: 0.0001,
           color: colors[i],
-          title: formatINR(v),
-          radius: 52,
-          titleStyle: const TextStyle(
-              fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+          showTitle: false,
+          radius: 40,
         ));
+      } else {
+        list.add(
+          PieChartSectionData(
+            value: v,
+            color: colors[i],
+            title: formatINR(v),
+            radius: 52,
+            titleStyle: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+        );
       }
     }
     return list;
   }
 
   List<Map<String, dynamic>> _kpiItemsForTotals(Map<String, double> totals) {
+    final payable = _calcPayableSummary();
     return [
-      {'title': 'Total Effective', 'value': formatINR(totals['effective'] ?? 0)},
+      {'title': 'Total Payable', 'value': formatINR(payable['totalPayable'] ?? 0)},
+      {'title': 'Academic Due', 'value': formatINR(payable['academicDue'] ?? 0)},
+      {'title': 'Fine Due', 'value': formatINR(payable['fineDue'] ?? 0)},
+      {'title': 'Transport Due', 'value': formatINR(payable['vanDue'] ?? 0)},
+      {'title': 'Previous Balance', 'value': formatINR(payable['prevBalanceDue'] ?? 0)},
       {'title': 'Received', 'value': formatINR(totals['received'] ?? 0)},
-      {'title': 'Concession', 'value': formatINR(totals['concession'] ?? 0)},
-      {'title': 'Fine Remaining', 'value': formatINR(totals['fineRemaining'] ?? 0)},
-      {'title': 'Previous Balance', 'value': formatINR(totals['prevBalanceDue'] ?? 0)},
-      {'title': 'Total Due (Academic)', 'value': formatINR(totals['due'] ?? 0)},
     ];
   }
 
   /* =========================================================
-    Auto-scroll (safe)
+    Auto-scroll
   ========================================================= */
 
   void _startChipAutoScroll() {
@@ -1458,10 +1723,9 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
 
         final max = _chipScrollController.position.maxScrollExtent;
         final current = _chipScrollController.offset;
-
         if (max <= 0) return;
 
-        double next = current + _chipScrollStep;
+        final next = current + _chipScrollStep;
 
         if (next >= max) {
           await _chipScrollController.animateTo(
@@ -1472,7 +1736,6 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
           await Future.delayed(const Duration(milliseconds: 250));
           if (!mounted) return;
           if (!_chipScrollController.hasClients) return;
-
           await _chipScrollController.animateTo(
             0,
             duration: _chipAnim,
@@ -1496,14 +1759,12 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
     _kpiPageTimer = Timer.periodic(_kpiPageInterval, (_) {
       try {
         final controller = _kpiPageController;
-        if (controller == null) return;
-        if (!controller.hasClients) return;
+        if (controller == null || !controller.hasClients) return;
 
         final itemCount = _kpiItemsForTotals(_calcTotals()).length;
         if (itemCount == 0) return;
 
         _kpiPage = (_kpiPage + 1) % itemCount;
-
         controller.animateToPage(
           _kpiPage,
           duration: _kpiPageAnim,
@@ -1538,7 +1799,7 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
       actions: [
         IconButton(
           tooltip: 'Refresh',
-          onPressed: () async => _loadFamilyAndActive(),
+          onPressed: () => _loadFamilyAndActive(),
           icon: const Icon(Icons.refresh),
         ),
       ],
@@ -1548,12 +1809,13 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
   Widget _hero() {
     final sd = studentDetails ?? {};
     final totals = _calcTotals();
-    final vanDue = totals['vanDue'] ?? 0.0;
-    final prevDue = totals['prevBalanceDue'] ?? 0.0;
+    final payable = _calcPayableSummary();
     final transportEnabled = _transportEnabled();
     final kpiItems = _kpiItemsForTotals(totals);
 
-    final canPayVan = (vanDue + prevDue) > 0;
+    final totalPayable = payable['totalPayable'] ?? 0.0;
+    final vanDue = payable['vanDue'] ?? 0.0;
+    final prevDue = payable['prevBalanceDue'] ?? 0.0;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1563,30 +1825,29 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(22),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.10),
             blurRadius: 18,
             offset: const Offset(0, 10),
-          )
+          ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header row
           Row(
             children: [
               Container(
-                width: 46,
-                height: 46,
+                width: 52,
+                height: 52,
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.18),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white.withOpacity(0.25)),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: Colors.white.withOpacity(0.24)),
                 ),
-                child: const Icon(Icons.account_circle,
+                child: const Icon(Icons.school_rounded,
                     color: Colors.white, size: 28),
               ),
               const SizedBox(width: 12),
@@ -1594,36 +1855,43 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Fees for',
-                        style: TextStyle(
-                            color: Colors.white.withOpacity(0.9),
-                            fontSize: 12)),
+                    Text(
+                      'Fees overview',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.88),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                     const SizedBox(height: 2),
                     Text(
                       (sd['name'] ?? 'Student').toString(),
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w900,
-                        fontSize: 20,
+                        fontSize: 21,
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 6),
-                    Wrap(spacing: 8, runSpacing: 6, children: [
-                      _softBadge('Adm No', sd['admissionNumber'] ?? '—'),
-                      if (sd['class_name'] != null)
-                        _softBadge('Class', sd['class_name']),
-                      if (sd['section_name'] != null)
-                        _softBadge('Section', sd['section_name']),
-                    ]),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        _softBadge('Adm', sd['admissionNumber'] ?? activeAdmission),
+                        if (sd['class_name'] != null)
+                          _softBadge('Class', sd['class_name']),
+                        if (sd['section_name'] != null)
+                          _softBadge('Sec', sd['section_name']),
+                      ],
+                    ),
                   ],
                 ),
               ),
             ],
           ),
 
-          // Student switcher
-          if (canSeeStudentSwitcher && studentsList.isNotEmpty) ...[
+          if (canSeeStudentSwitcher && (siblingsLoading || studentsList.isNotEmpty)) ...[
             const SizedBox(height: 14),
             Container(
               width: double.infinity,
@@ -1631,142 +1899,164 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.14),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white.withOpacity(0.22)),
+                border: Border.all(color: Colors.white.withOpacity(0.20)),
               ),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: studentsList.map((s) {
-                    final admRaw =
-                        (s['admission_number']?.toString() ?? '').trim();
-                    final isActive = (admRaw == activeAdmission);
-                    final name = (s['isSelf'] ?? false)
-                        ? 'Me'
-                        : (s['name']?.toString() ?? 'Student');
-                    final cls = s['class']?['name']?.toString() ?? '';
-                    final sec = s['section']?['name']?.toString() ?? '';
-                    final label = cls.isNotEmpty
-                        ? '$name · $cls${sec.isNotEmpty ? '-$sec' : ''}'
-                        : name;
-
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 10),
-                      child: InkWell(
-                        onTap: () => handleStudentSwitch(admRaw),
-                        borderRadius: BorderRadius.circular(999),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: isActive
-                                ? Colors.white
-                                : Colors.white.withOpacity(0.18),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: isActive
-                                  ? Colors.white
-                                  : Colors.white.withOpacity(0.20),
-                            ),
-                          ),
-                          child: Text(
-                            label,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight:
-                                  isActive ? FontWeight.w800 : FontWeight.w600,
-                              color: isActive ? Colors.black87 : Colors.white,
-                            ),
+              child: siblingsLoading
+                  ? const SizedBox(
+                      height: 48,
+                      child: Center(
+                        child: SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.3,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                           ),
                         ),
                       ),
-                    );
-                  }).toList(),
-                ),
-              ),
+                    )
+                  : SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: studentsList.map((s) {
+                          final admRaw =
+                              (_stringValue(s['admission_number']) ?? '').trim();
+                          final isActive = admRaw == activeAdmission;
+                          final label = _studentSwitcherLabel(s);
+
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 10),
+                            child: InkWell(
+                              onTap: admRaw.isEmpty
+                                  ? null
+                                  : () => handleStudentSwitch(admRaw),
+                              borderRadius: BorderRadius.circular(999),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: isActive
+                                      ? Colors.white
+                                      : Colors.white.withOpacity(0.18),
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: isActive
+                                        ? Colors.white
+                                        : Colors.white.withOpacity(0.20),
+                                  ),
+                                ),
+                                child: Text(
+                                  label,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: isActive
+                                        ? FontWeight.w800
+                                        : FontWeight.w600,
+                                    color:
+                                        isActive ? Colors.black87 : Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
             ),
           ],
 
-          // Chips + Pay Van button
+          const SizedBox(height: 16),
+          _payableHighlightCard(totalPayable, payable),
           const SizedBox(height: 14),
+
           SizedBox(
             height: 56,
             child: ListView(
               controller: _chipScrollController,
               scrollDirection: Axis.horizontal,
               children: [
+                const SizedBox(width: 6),
+                _chipRowItem(
+                  Icons.receipt_long_rounded,
+                  'Academic Due',
+                  formatINR(payable['academicDue'] ?? 0),
+                  Colors.white.withOpacity(0.16),
+                ),
                 const SizedBox(width: 8),
-
-                if (transportEnabled) ...[
+                _chipRowItem(
+                  Icons.warning_amber_rounded,
+                  'Fine Due',
+                  formatINR(payable['fineDue'] ?? 0),
+                  Colors.white.withOpacity(0.16),
+                ),
+                const SizedBox(width: 8),
+                if (transportEnabled)
                   _chipRowItem(
                     Icons.local_shipping,
                     'Transport Due',
-                    formatINR(totals['vanCost'] ?? 0),
-                    Colors.white.withOpacity(0.18),
-                  ),
-                  const SizedBox(width: 8),
-                  _chipRowItem(
-                    Icons.account_balance_wallet,
-                    'Van Received',
-                    formatINR(totals['vanReceived'] ?? 0),
-                    Colors.white.withOpacity(0.18),
-                  ),
-                  const SizedBox(width: 8),
-                  _chipRowItem(
-                    Icons.confirmation_num,
-                    'Van Concession',
-                    formatINR(totals['vanConcession'] ?? 0),
-                    Colors.white.withOpacity(0.18),
-                  ),
-                  const SizedBox(width: 8),
-                  _chipRowItem(
-                    Icons.money,
-                    'Van Due',
                     formatINR(vanDue),
-                    Colors.white.withOpacity(0.22),
+                    Colors.white.withOpacity(0.18),
                     valueColor: vanDue > 0 ? Colors.yellowAccent : Colors.white,
                   ),
-                  const SizedBox(width: 8),
-                ],
-
+                if (transportEnabled) const SizedBox(width: 8),
                 _chipRowItem(
-                  Icons.warning_amber_rounded,
+                  Icons.account_balance_wallet_outlined,
                   'Previous Balance',
                   formatINR(prevDue),
                   Colors.white.withOpacity(0.22),
                   valueColor: prevDue > 0 ? Colors.yellowAccent : Colors.white,
                 ),
-
                 const SizedBox(width: 10),
-
-                if (transportEnabled)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: ElevatedButton.icon(
-                      onPressed: canPayVan ? handlePayVanFee : null,
-                      icon: const Icon(Icons.credit_card),
-                      label: Text(prevDue > 0 ? 'Pay Van Fee (incl. OB)' : 'Pay Van Fee'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: Colors.black87,
-                        disabledBackgroundColor: Colors.white.withOpacity(0.25),
-                        disabledForegroundColor: Colors.white70,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(999)),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 10),
-                      ),
-                    ),
-                  ),
-
-                const SizedBox(width: 12),
               ],
             ),
           ),
 
-          // KPI cards
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: prevDue > 0 ? handlePayPreviousBalanceOnly : null,
+                  icon: const Icon(Icons.account_balance_wallet_outlined),
+                  label: const Text('Pay Prev. Balance'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: _slate,
+                    disabledBackgroundColor: Colors.white.withOpacity(0.22),
+                    disabledForegroundColor: Colors.white70,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+              ),
+              if (transportEnabled) ...[
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: (vanDue + prevDue) > 0 ? handlePayVanFee : null,
+                    icon: const Icon(Icons.credit_card),
+                    label: const Text('Pay Van / OB'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: _slate,
+                      disabledBackgroundColor: Colors.white.withOpacity(0.22),
+                      disabledForegroundColor: Colors.white70,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+
           const SizedBox(height: 14),
           SizedBox(
-            height: 110,
+            height: 108,
             child: Column(
               children: [
                 Expanded(
@@ -1804,10 +2094,110 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
                       ),
                     );
                   }),
-                )
+                ),
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _payableHighlightCard(
+      double totalPayable, Map<String, double> payable) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Outstanding Amount',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: Colors.black54,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            formatINR(totalPayable),
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.w900,
+              color: totalPayable > 0 ? _slate : Colors.green.shade700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            totalPayable > 0
+                ? 'Includes academic, fine, transport and previous balance.'
+                : 'All dues cleared.',
+            style: const TextStyle(
+              fontSize: 12,
+              color: Colors.black54,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _miniInfoTile(
+                    'Academic', formatINR(payable['academicDue'] ?? 0)),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child:
+                    _miniInfoTile('Fine', formatINR(payable['fineDue'] ?? 0)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _miniInfoTile(
+                    'Transport', formatINR(payable['vanDue'] ?? 0)),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _miniInfoTile(
+                    'Previous Bal.', formatINR(payable['prevBalanceDue'] ?? 0)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniInfoTile(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label,
+              style: const TextStyle(fontSize: 12, color: Colors.black54)),
+          const SizedBox(height: 4),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w800)),
         ],
       ),
     );
@@ -1821,17 +2211,21 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: Colors.white.withOpacity(0.18)),
       ),
-      child: Row(children: [
-        Text('$label: ',
-            style: const TextStyle(color: Colors.white70, fontSize: 12)),
-        SizedBox(
-          width: 110,
-          child: Text('$value',
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('$label: ',
+              style: const TextStyle(color: Colors.white70, fontSize: 12)),
+          Flexible(
+            child: Text(
+              '$value',
               style: const TextStyle(
                   color: Colors.white, fontWeight: FontWeight.w800),
-              overflow: TextOverflow.ellipsis),
-        ),
-      ]),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1843,7 +2237,7 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
     Color valueColor = Colors.white,
   }) {
     return Container(
-      constraints: const BoxConstraints(minWidth: 120),
+      constraints: const BoxConstraints(minWidth: 132),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       margin: const EdgeInsets.symmetric(vertical: 4),
       decoration: BoxDecoration(
@@ -1851,26 +2245,31 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: Colors.white.withOpacity(0.18)),
       ),
-      child: Row(children: [
-        Icon(icon, size: 16, color: Colors.white),
-        const SizedBox(width: 8),
-        Flexible(
-          child: Text(
-            label,
-            style: const TextStyle(
-                fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
-            overflow: TextOverflow.ellipsis,
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: Colors.white),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
-        ),
-        const SizedBox(width: 8),
-        Flexible(
-          child: Text(
-            value,
-            style: TextStyle(fontWeight: FontWeight.w900, color: valueColor),
-            overflow: TextOverflow.ellipsis,
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              value,
+              style: TextStyle(fontWeight: FontWeight.w900, color: valueColor),
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
-        ),
-      ]),
+        ],
+      ),
     );
   }
 
@@ -1883,286 +2282,432 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.white.withOpacity(0.25)),
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(
-          title,
-          style: const TextStyle(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
               fontSize: 13,
               color: Colors.white70,
-              fontWeight: FontWeight.w800),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        const Spacer(),
-        Text(
-          value,
-          style: const TextStyle(
-              fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white),
-        ),
-      ]),
+              fontWeight: FontWeight.w800,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const Spacer(),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   /* =========================================================
-    Fee Cards (UPDATED: fine + prev slabs + OB in pay)
+    Fee Cards
   ========================================================= */
 
   Widget _feeCardsGrid() {
     final fees = (studentDetails?['feeDetails'] as List?) ?? [];
-    if (fees.isEmpty) {
+    final hasPrevBalance = _prevBalanceDue > 0;
+
+    if (fees.isEmpty && !hasPrevBalance) {
       return const Center(child: Text('No fee details available.'));
     }
 
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: fees.length,
-      itemBuilder: (context, idx) {
-        final fee = Map<String, dynamic>.from(fees[idx]);
-        final t = getTransportBreakdown(fee);
+    return Column(
+      children: [
+        if (hasPrevBalance) ...[
+          _previousBalanceFeeCard(),
+          const SizedBox(height: 12),
+        ],
+        if (fees.isNotEmpty)
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: fees.length,
+            itemBuilder: (context, idx) {
+              final fee = Map<String, dynamic>.from(fees[idx]);
+              final t = getTransportBreakdown(fee);
 
-        final academicDue = _num(fee['finalAmountDue']);
-        final fineDue = _feeFineDue(fee);
+              final academicDue = _num(fee['finalAmountDue']);
+              final fineDue = _feeFineDue(fee);
+              final totalInclVanFine = academicDue + fineDue + _num(t?['pending']);
 
-        final totalInclVanFine =
-            academicDue + fineDue + _num(t?['pending']);
+              final received = _num(fee['totalFeeReceived']);
+              final concession = _num(fee['totalConcessionReceived']);
+              final effective = _num(fee['effectiveFeeDue']);
 
-        final received = _num(fee['totalFeeReceived']);
-        final concession = _num(fee['totalConcessionReceived']);
-        final effective = _num(fee['effectiveFeeDue']);
+              final paidPct =
+                  effective > 0 ? ((received + concession) / effective) * 100 : 0.0;
 
-        final paidPct =
-            effective > 0 ? ((received + concession) / effective) * 100 : 0.0;
+              final vanPaidPct = (t != null && _num(t['cost']) > 0)
+                  ? ((_num(t['received']) + _num(t['concession'])) /
+                          (_num(t['cost'])) *
+                          100.0)
+                  : 0.0;
 
-        final vanPaidPct = (t != null && _num(t['cost']) > 0)
-            ? ((_num(t['received']) + _num(t['concession'])) / (_num(t['cost'])) * 100.0)
-            : 0.0;
+              final prev = _computePreviousSlabsTotals(idx);
+              final prevCount = (prev['count'] as int?) ?? 0;
+              final isExpanded = _expandedFees.length > idx ? _expandedFees[idx] : false;
 
-        final prev = _computePreviousSlabsTotals(idx);
-        final prevCount = (prev['count'] as int?) ?? 0;
+              final canPay = (academicDue > 0) ||
+                  (fineDue > 0) ||
+                  (_num(t?['pending']) > 0) ||
+                  (prevCount > 0) ||
+                  (_prevBalanceDue > 0);
 
-        final isExpanded =
-            _expandedFees.length > idx ? _expandedFees[idx] : false;
-
-        final canPay = (academicDue > 0) ||
-            (fineDue > 0) ||
-            (_num(t?['pending']) > 0) ||
-            (prevCount > 0) ||
-            (_prevBalanceDue > 0);
-
-        return Card(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          elevation: 2,
-          child: Column(
-            children: [
-              InkWell(
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(16)),
-                onTap: () {
-                  setState(() {
-                    if (_expandedFees.length > idx) {
-                      _expandedFees[idx] = !_expandedFees[idx];
-                    }
-                  });
-                },
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Colors.indigo.shade50, Colors.cyan.shade50],
-                    ),
-                    borderRadius:
-                        const BorderRadius.vertical(top: Radius.circular(16)),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          (fee['fee_heading'] ?? 'Fee').toString(),
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w900, fontSize: 14),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 2,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      if (academicDue + fineDue > 0)
-                        _pill('Due', formatINR(academicDue + fineDue),
-                            bg: Colors.red.shade50, fg: Colors.red.shade700)
-                      else
-                        _pill('Clear', '0',
-                            bg: Colors.green.shade50,
-                            fg: Colors.green.shade700),
-                      const SizedBox(width: 8),
-                      Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
-                    ],
-                  ),
-                ),
-              ),
-              if (isExpanded)
-                Padding(
-                  padding: const EdgeInsets.all(12.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _smallRow('Original', formatINR(fee['originalFeeDue'] ?? 0)),
-                      _smallRow('Effective', formatINR(fee['effectiveFeeDue'] ?? 0)),
-                      _smallRow('Received', formatINR(received)),
-                      _smallRow('Concession', formatINR(concession)),
-                      _smallRow('Fine (remaining)', formatINR(fineDue)),
-                      const SizedBox(height: 8),
-                      _progressRow(
-                        label: 'Academic Paid',
-                        percent: paidPct.toDouble(),
-                        color: Colors.blue,
-                      ),
-
-                      if (prevCount > 0) ...[
-                        const SizedBox(height: 12),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.shade50,
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: Colors.orange.shade200),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Previous heads pending ($prevCount)',
-                                style: const TextStyle(fontWeight: FontWeight.w900),
-                              ),
-                              const SizedBox(height: 6),
-                              _tinyRow('Prev Academic', formatINR(prev['totalAcademic'])),
-                              _tinyRow('Prev Fine', formatINR(prev['totalFine'])),
-                              _tinyRow('Prev Transport', formatINR(prev['totalVan'])),
-                            ],
-                          ),
-                        ),
-                      ],
-
-                      if (t != null) ...[
-                        const SizedBox(height: 12),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(14),
-                            color: Colors.blue.shade50,
-                            border: Border.all(color: Colors.blue.shade100),
-                          ),
-                          child: Column(
-                            children: [
-                              Row(
-                                children: [
-                                  const Icon(Icons.local_shipping, size: 16),
-                                  const SizedBox(width: 8),
-                                  const Expanded(
-                                    child: Text('Transport',
-                                        style: TextStyle(fontWeight: FontWeight.w900)),
-                                  ),
-                                  Text(
-                                    formatINR(t['pending'] ?? 0),
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w900,
-                                      color: _num(t['pending']) > 0 ? Colors.red : Colors.green,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              _tinyRow('Due (Head)', formatINR(t['due'] ?? 0)),
-                              _tinyRow('Received (Head)', formatINR(t['received'] ?? 0)),
-                              _tinyRow('Concession (Head)', formatINR(t['concession'] ?? 0)),
-                              _tinyRow(
-                                'Pending (Head)',
-                                formatINR(t['pending'] ?? 0),
-                                valueIsDanger: _num(t['pending']) > 0,
-                              ),
-                              const SizedBox(height: 8),
-                              _progressRow(
-                                label: 'Transport Paid',
-                                percent: vanPaidPct.toDouble(),
-                                color: Colors.teal,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-
-                      const SizedBox(height: 12),
-
-                      // Total box
-                      Container(
+              return Card(
+                shape:
+                    RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                elevation: 2,
+                margin: const EdgeInsets.only(bottom: 12),
+                child: Column(
+                  children: [
+                    InkWell(
+                      borderRadius:
+                          const BorderRadius.vertical(top: Radius.circular(16)),
+                      onTap: () {
+                        setState(() {
+                          if (_expandedFees.length > idx) {
+                            _expandedFees[idx] = !_expandedFees[idx];
+                          }
+                        });
+                      },
+                      child: Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.all(12),
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(14),
-                          color: Colors.grey.shade50,
-                          border: Border.all(color: Colors.black12),
+                          gradient: LinearGradient(
+                            colors: [Colors.indigo.shade50, Colors.cyan.shade50],
+                          ),
+                          borderRadius:
+                              const BorderRadius.vertical(top: Radius.circular(16)),
                         ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                (fee['fee_heading'] ?? 'Fee').toString(),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w900, fontSize: 14),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 2,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            if (academicDue + fineDue > 0)
+                              _pill('Due', formatINR(academicDue + fineDue),
+                                  bg: Colors.red.shade50, fg: Colors.red.shade700)
+                            else
+                              _pill('Clear', '0',
+                                  bg: Colors.green.shade50,
+                                  fg: Colors.green.shade700),
+                            const SizedBox(width: 8),
+                            Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (isExpanded)
+                      Padding(
+                        padding: const EdgeInsets.all(12.0),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _smallRow('Academic Due', formatINR(academicDue)),
-                            _smallRow('Fine Due', formatINR(fineDue)),
-                            if (t != null)
-                              _smallRow('Transport Pending', formatINR(t['pending'] ?? 0)),
-                            const Divider(height: 18),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  t != null
-                                      ? 'Total Due (incl. Fine + Transport)'
-                                      : 'Total Due (incl. Fine)',
-                                  style: const TextStyle(fontWeight: FontWeight.w900),
+                            _smallRow('Original', formatINR(fee['originalFeeDue'] ?? 0)),
+                            _smallRow('Effective', formatINR(fee['effectiveFeeDue'] ?? 0)),
+                            _smallRow('Received', formatINR(received)),
+                            _smallRow('Concession', formatINR(concession)),
+                            _smallRow('Fine (remaining)', formatINR(fineDue)),
+                            const SizedBox(height: 8),
+                            _progressRow(
+                              label: 'Academic Paid',
+                              percent: paidPct.toDouble(),
+                              color: Colors.blue,
+                            ),
+                            if (prevCount > 0) ...[
+                              const SizedBox(height: 12),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.shade50,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: Colors.orange.shade200),
                                 ),
-                                Text(
-                                  formatINR(totalInclVanFine),
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    color: totalInclVanFine > 0 ? Colors.red : Colors.green,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Previous heads pending',
+                                      style: TextStyle(fontWeight: FontWeight.w900),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    _tinyRow('Heads Count', '$prevCount'),
+                                    _tinyRow('Prev Academic', formatINR(prev['totalAcademic'])),
+                                    _tinyRow('Prev Fine', formatINR(prev['totalFine'])),
+                                    _tinyRow('Prev Transport', formatINR(prev['totalVan'])),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            if (t != null) ...[
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 10),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(14),
+                                  color: Colors.blue.shade50,
+                                  border: Border.all(color: Colors.blue.shade100),
+                                ),
+                                child: Column(
+                                  children: [
+                                    Row(
+                                      children: [
+                                        const Icon(Icons.local_shipping, size: 16),
+                                        const SizedBox(width: 8),
+                                        const Expanded(
+                                          child: Text('Transport',
+                                              style: TextStyle(
+                                                  fontWeight: FontWeight.w900)),
+                                        ),
+                                        Text(
+                                          formatINR(t['pending'] ?? 0),
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                            color: _num(t['pending']) > 0
+                                                ? Colors.red
+                                                : Colors.green,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    _tinyRow('Due (Head)', formatINR(t['due'] ?? 0)),
+                                    _tinyRow('Received (Head)', formatINR(t['received'] ?? 0)),
+                                    _tinyRow('Concession (Head)', formatINR(t['concession'] ?? 0)),
+                                    _tinyRow(
+                                      'Pending (Head)',
+                                      formatINR(t['pending'] ?? 0),
+                                      valueIsDanger: _num(t['pending']) > 0,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    _progressRow(
+                                      label: 'Transport Paid',
+                                      percent: vanPaidPct.toDouble(),
+                                      color: Colors.teal,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(14),
+                                color: Colors.grey.shade50,
+                                border: Border.all(color: Colors.black12),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _smallRow('Academic Due', formatINR(academicDue)),
+                                  _smallRow('Fine Due', formatINR(fineDue)),
+                                  if (t != null)
+                                    _smallRow(
+                                        'Transport Pending', formatINR(t['pending'] ?? 0)),
+                                  const Divider(height: 18),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        t != null
+                                            ? 'Total Due (incl. Fine + Transport)'
+                                            : 'Total Due (incl. Fine)',
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w900),
+                                      ),
+                                      Text(
+                                        formatINR(totalInclVanFine),
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                          color: totalInclVanFine > 0
+                                              ? Colors.red
+                                              : Colors.green,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: canPay ? () => handlePayFee(fee, idx) : null,
+                                icon: const Icon(Icons.credit_card),
+                                label: Text(
+                                  canPay
+                                      ? 'Pay (Acad + Fine${t != null ? ' + TR' : ''}${prevCount > 0 ? ' + Prev Heads' : ''}${_prevBalanceDue > 0 ? ' + OB' : ''})'
+                                      : 'Paid',
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: canPay ? _indigo : Colors.green,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
                                   ),
                                 ),
-                              ],
+                              ),
                             ),
                           ],
                         ),
                       ),
+                  ],
+                ),
+              );
+            },
+          ),
+      ],
+    );
+  }
 
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: canPay ? () => handlePayFee(fee, idx) : null,
-                          icon: const Icon(Icons.credit_card),
-                          label: Text(
-                            canPay ? 'Pay (Acad + Fine${t != null ? " + TR" : ""}'
-                                '${prevCount > 0 ? " + Prev Heads" : ""}'
-                                '${_prevBalanceDue > 0 ? " + OB" : ""})'
-                                : 'Paid',
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: canPay ? _indigo : Colors.green,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14)),
-                          ),
+  Widget _previousBalanceFeeCard() {
+    final isExpanded = _expandedPrevBalance;
+    final canPay = _prevBalanceDue > 0;
+
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 2,
+      margin: EdgeInsets.zero,
+      child: Column(
+        children: [
+          InkWell(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            onTap: () => setState(() => _expandedPrevBalance = !_expandedPrevBalance),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.orange.shade50, Colors.red.shade50],
+                ),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              ),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Previous Balance',
+                      style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 2,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  if (canPay)
+                    _pill('Due', formatINR(_prevBalanceDue),
+                        bg: Colors.red.shade50, fg: Colors.red.shade700)
+                  else
+                    _pill('Clear', '0',
+                        bg: Colors.green.shade50, fg: Colors.green.shade700),
+                  const SizedBox(width: 8),
+                  Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
+                ],
+              ),
+            ),
+          ),
+          if (isExpanded)
+            Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _smallRow('Outstanding', formatINR(_prevBalanceDue)),
+                  if (_activeSessionId != null)
+                    _smallRow('Active Session', _activeSessionId.toString()),
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.orange.shade100),
+                    ),
+                    child: const Text(
+                      'This is the carry-forward balance from previous dues and is now shown as the first fee heading.',
+                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      color: Colors.grey.shade50,
+                      border: Border.all(color: Colors.black12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _smallRow('Previous Balance Due', formatINR(_prevBalanceDue)),
+                        const Divider(height: 18),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Total Due',
+                              style: TextStyle(fontWeight: FontWeight.w900),
+                            ),
+                            Text(
+                              formatINR(_prevBalanceDue),
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                color: canPay ? Colors.red : Colors.green,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: canPay ? handlePayPreviousBalanceOnly : null,
+                      icon: const Icon(Icons.credit_card),
+                      label: Text(canPay ? 'Pay Previous Balance' : 'Paid'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: canPay ? _indigo : Colors.green,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
                         ),
                       ),
-                    ],
+                    ),
                   ),
-                ),
-            ],
-          ),
-        );
-      },
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -2189,7 +2734,9 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
   }
 
   Widget _progressRow(
-      {required String label, required double percent, required Color color}) {
+      {required String label,
+      required double percent,
+      required Color color}) {
     final p = percent.clamp(0, 100);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2197,13 +2744,12 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
         Row(
           children: [
             Expanded(
-              child: Text('$label ${p.toStringAsFixed(1)}%',
-                  style: const TextStyle(fontSize: 12, color: Colors.black54)),
+              child: Text(
+                '$label ${p.toStringAsFixed(1)}%',
+                style: const TextStyle(fontSize: 12, color: Colors.black54),
+              ),
             ),
-            Text(
-              p >= 99.9 ? '✅' : '',
-              style: const TextStyle(fontSize: 12),
-            ),
+            Text(p >= 99.9 ? '✅' : '', style: const TextStyle(fontSize: 12)),
           ],
         ),
         const SizedBox(height: 6),
@@ -2230,17 +2776,14 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Flexible(
-            child: Text(label,
-                style: const TextStyle(fontSize: 13),
-                overflow: TextOverflow.ellipsis),
-          ),
+              child: Text(label,
+                  style: const TextStyle(fontWeight: FontWeight.w600))),
           const SizedBox(width: 8),
           Flexible(
             child: Text(
               value,
-              style: const TextStyle(fontWeight: FontWeight.w800),
-              overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.right,
+              style: const TextStyle(fontWeight: FontWeight.w800),
             ),
           ),
         ],
@@ -2255,17 +2798,20 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Flexible(
-            child: Text(label,
-                style: const TextStyle(fontSize: 12, color: Colors.black54),
-                overflow: TextOverflow.ellipsis),
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 12, color: Colors.black54),
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
           const SizedBox(width: 8),
           Flexible(
             child: Text(
               value,
               style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: valueIsDanger ? Colors.red : Colors.black87),
+                fontWeight: FontWeight.w800,
+                color: valueIsDanger ? Colors.red : Colors.black87,
+              ),
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.right,
             ),
@@ -2274,6 +2820,10 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
       ),
     );
   }
+
+  /* =========================================================
+    Summary Pie + History
+  ========================================================= */
 
   Widget _overallPie() {
     final totals = _calcTotals();
@@ -2285,20 +2835,18 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
         padding: const EdgeInsets.all(12),
         child: SizedBox(
           height: 320,
-          child: PieChart(PieChartData(
-            sections: sections,
-            centerSpaceRadius: 46,
-            sectionsSpace: 2,
-            pieTouchData: PieTouchData(enabled: true),
-          )),
+          child: PieChart(
+            PieChartData(
+              sections: sections,
+              centerSpaceRadius: 46,
+              sectionsSpace: 2,
+              pieTouchData: PieTouchData(enabled: true),
+            ),
+          ),
         ),
       ),
     );
   }
-
-  /* =========================================================
-    History (unchanged from your version)
-  ========================================================= */
 
   String _extractFeeHeading(Map<String, dynamic> txn) {
     final fh = txn['FeeHeading'];
@@ -2312,7 +2860,8 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
   }
 
   DateTime? _extractTxnDate(Map<String, dynamic> txn) {
-    final raw = txn['createdAt'] ?? txn['created_at'] ?? txn['date'] ?? txn['Date'];
+    final raw =
+        txn['createdAt'] ?? txn['created_at'] ?? txn['date'] ?? txn['Date'];
     if (raw == null) return null;
     return DateTime.tryParse(raw.toString());
   }
@@ -2323,7 +2872,10 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
   }
 
   String _extractOrderId(Map<String, dynamic> txn) {
-    final v = txn['Order_ID'] ?? txn['order_id'] ?? txn['vendorOrderId'] ?? txn['orderId'];
+    final v = txn['Order_ID'] ??
+        txn['order_id'] ??
+        txn['vendorOrderId'] ??
+        txn['orderId'];
     return _safeStr(v);
   }
 
@@ -2367,9 +2919,7 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
     final Map<String, List<Map<String, dynamic>>> grouped = {};
     for (final txn in list) {
       final dt = _extractTxnDate(txn);
-      final key = (dt != null)
-          ? DateFormat('MMMM yyyy').format(dt)
-          : 'Unknown Date';
+      final key = dt != null ? DateFormat('MMMM yyyy').format(dt) : 'Unknown Date';
       grouped.putIfAbsent(key, () => []);
       grouped[key]!.add(txn);
     }
@@ -2406,154 +2956,206 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
             Column(
               children: groupKeys.map((gk) {
                 final items = grouped[gk] ?? [];
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _historyGroupHeader(gk, items.length),
-                    const SizedBox(height: 10),
-                    ListView.separated(
-                      itemCount: items.length,
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      separatorBuilder: (_, __) => const SizedBox(height: 10),
-                      itemBuilder: (context, i) {
-                        final txn = items[i];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.04),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          gk,
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Column(
+                        children: items.map((txn) {
+                          final feeHeading = _extractFeeHeading(txn);
+                          final dt = _extractTxnDate(txn);
+                          final dtStr = (dt != null)
+                              ? DateFormat('dd MMM yyyy, hh:mm a').format(dt)
+                              : (_safeStr(txn['createdAt']).isEmpty
+                                  ? '—'
+                                  : _safeStr(txn['createdAt']));
 
-                        final feeHeading = _extractFeeHeading(txn);
-                        final dt = _extractTxnDate(txn);
-                        final dtStr = (dt != null)
-                            ? DateFormat('dd MMM yyyy, hh:mm a').format(dt)
-                            : (_safeStr(txn['createdAt']).isEmpty
-                                ? '—'
-                                : _safeStr(txn['createdAt']));
+                          final paymentMode = _extractPaymentMode(txn);
+                          final orderId = _extractOrderId(txn);
+                          final txnId = _extractTxnId(txn);
+                          final serial = _extractSerial(txn);
+                          final slipId = _extractSlipId(txn);
 
-                        final paymentMode = _extractPaymentMode(txn);
-                        final orderId = _extractOrderId(txn);
-                        final txnId = _extractTxnId(txn);
-                        final serial = _extractSerial(txn);
-                        final slipId = _extractSlipId(txn);
+                          final fee = formatINR(txn['Fee_Recieved'] ?? 0);
+                          final conc = formatINR(txn['Concession'] ?? 0);
+                          final fine = formatINR(_txnFine(txn));
+                          final van = formatINR(txn['VanFee'] ?? 0);
 
-                        final fee = formatINR(txn['Fee_Recieved'] ?? 0);
-                        final conc = formatINR(txn['Concession'] ?? 0);
-                        final fine = formatINR(_txnFine(txn));
-                        final van = formatINR(txn['VanFee'] ?? 0);
+                          final isOnline = paymentMode.toUpperCase() == 'ONLINE';
 
-                        final isOnline = paymentMode.toUpperCase() == 'ONLINE';
-
-                        return Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: Colors.black12),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    width: 40,
-                                    height: 40,
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        colors: isOnline
-                                            ? const [_indigo, _cyan]
-                                            : [Colors.grey.shade600, Colors.grey.shade400],
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: Colors.black12),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(
+                                      width: 40,
+                                      height: 40,
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          colors: isOnline
+                                              ? const [_indigo, _cyan]
+                                              : [
+                                                  Colors.grey.shade600,
+                                                  Colors.grey.shade400,
+                                                ],
+                                        ),
+                                        borderRadius: BorderRadius.circular(12),
                                       ),
-                                      borderRadius: BorderRadius.circular(12),
+                                      child: const Icon(Icons.payments,
+                                          color: Colors.white),
                                     ),
-                                    child: const Icon(Icons.payments, color: Colors.white),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          feeHeading,
-                                          style: const TextStyle(fontWeight: FontWeight.w900),
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            feeHeading,
+                                            style: const TextStyle(
+                                                fontWeight: FontWeight.w900),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            'Paid on: $dtStr',
+                                            style: const TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.black54),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10, vertical: 7),
+                                      decoration: BoxDecoration(
+                                        color: isOnline
+                                            ? Colors.blue.shade50
+                                            : Colors.grey.shade200,
+                                        borderRadius: BorderRadius.circular(999),
+                                        border: Border.all(
+                                            color:
+                                                Colors.black.withOpacity(0.06)),
+                                      ),
+                                      child: Text(
+                                        paymentMode.isEmpty ? '—' : paymentMode,
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w900),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                        child:
+                                            _miniKV('Serial', serial.isEmpty ? '—' : serial)),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                        child: _miniKV(
+                                            'Slip ID', slipId.isEmpty ? '—' : slipId)),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    _amountChip('Fee', fee),
+                                    _amountChip('Concession', conc),
+                                    _amountChip('Fine', fine),
+                                    _amountChip('Van', van),
+                                  ],
+                                ),
+                                if (orderId.isNotEmpty || txnId.isNotEmpty) ...[
+                                  const SizedBox(height: 10),
+                                  if (orderId.isNotEmpty)
+                                    _miniKV('Order ID', orderId),
+                                  if (txnId.isNotEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    _miniKV('Transaction ID', txnId),
+                                  ],
+                                ],
+                                if (slipId.isNotEmpty) ...[
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: OutlinedButton.icon(
+                                          onPressed: (_slipDownloading[slipId] ?? false)
+                                              ? null
+                                              : () => _openSlip(slipId),
+                                          icon: (_slipDownloading[slipId] ?? false)
+                                              ? const SizedBox(
+                                                  width: 16,
+                                                  height: 16,
+                                                  child:
+                                                      CircularProgressIndicator(strokeWidth: 2),
+                                                )
+                                              : const Icon(Icons.open_in_new),
+                                          label: const Text('Open Slip'),
+                                          style: OutlinedButton.styleFrom(
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                          ),
                                         ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          'Paid on: $dtStr',
-                                          style: const TextStyle(fontSize: 12, color: Colors.black54),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: ElevatedButton.icon(
+                                          onPressed: (_slipDownloading[slipId] ?? false)
+                                              ? null
+                                              : () => _downloadSlipToDevice(slipId),
+                                          icon: const Icon(Icons.download_rounded),
+                                          label: const Text('Download Slip'),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: _indigo,
+                                            foregroundColor: Colors.white,
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                          ),
                                         ),
-                                      ],
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                                    decoration: BoxDecoration(
-                                      color: isOnline ? Colors.blue.shade50 : Colors.grey.shade200,
-                                      borderRadius: BorderRadius.circular(999),
-                                      border: Border.all(color: Colors.black.withOpacity(0.06)),
-                                    ),
-                                    child: Text(
-                                      paymentMode.isEmpty ? '—' : paymentMode,
-                                      style: const TextStyle(fontWeight: FontWeight.w900),
-                                    ),
+                                      ),
+                                    ],
                                   ),
                                 ],
-                              ),
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Expanded(child: _miniKV('Serial', serial.isEmpty ? '—' : serial)),
-                                  const SizedBox(width: 10),
-                                  Expanded(child: _miniKV('Slip ID', slipId.isEmpty ? '—' : slipId)),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black.withOpacity(0.05),
-                                      borderRadius: BorderRadius.circular(999),
-                                      border: Border.all(color: Colors.black.withOpacity(0.06)),
-                                    ),
-                                    child: const Text(
-                                      'Paid Details',
-                                      style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Expanded(child: _moneyTile('Fee', fee)),
-                                  const SizedBox(width: 10),
-                                  Expanded(child: _moneyTile('Fine', fine)),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Expanded(child: _moneyTile('Concession', conc)),
-                                  const SizedBox(width: 10),
-                                  Expanded(child: _moneyTile('Van', van)),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Expanded(child: _miniKV('Order ID', orderId.isEmpty ? '—' : orderId)),
-                                  const SizedBox(width: 10),
-                                  Expanded(child: _miniKV('Txn ID', txnId.isEmpty ? '—' : txnId)),
-                                ],
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 14),
-                  ],
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                  ),
                 );
               }).toList(),
             ),
@@ -2563,91 +3165,69 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
     );
   }
 
-  Widget _historyGroupHeader(String title, int count) {
+  Widget _miniKV(String label, String value) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        color: Colors.indigo.withOpacity(0.06),
-        border: Border.all(color: Colors.indigo.withOpacity(0.18)),
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.black12),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.calendar_month, size: 18, color: _indigo),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+          Text(label,
+              style: const TextStyle(fontSize: 11, color: Colors.black54)),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.w800),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: Colors.black12),
+        ],
+      ),
+    );
+  }
+
+  Widget _amountChip(String title, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.black.withOpacity(0.06)),
+      ),
+      child: RichText(
+        text: TextSpan(
+          style: const TextStyle(color: Colors.black87),
+          children: [
+            TextSpan(
+              text: '$title: ',
+              style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.black54),
             ),
-            child: Text('$count', style: const TextStyle(fontWeight: FontWeight.w900)),
-          )
-        ],
-      ),
-    );
-  }
-
-  Widget _miniKV(String k, String v) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.black12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(k,
-              style: const TextStyle(
-                  fontSize: 12, color: Colors.black54, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 4),
-          Text(v,
+            TextSpan(
+              text: value,
               style: const TextStyle(fontWeight: FontWeight.w900),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis),
-        ],
-      ),
-    );
-  }
-
-  Widget _moneyTile(String title, String value) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.black12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title,
-              style: const TextStyle(
-                  fontSize: 12, color: Colors.black54, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 4),
-          Text(value,
-              style: const TextStyle(fontWeight: FontWeight.w900),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
   /* =========================================================
-    Tabs Card (UPDATED summary)
+    Tabs Card
   ========================================================= */
 
   Widget _tabsCard() {
     final totals = _calcTotals();
     final transportEnabled = _transportEnabled();
+    final payable = _calcPayableSummary();
 
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
@@ -2685,8 +3265,8 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
                 child: Center(child: CircularProgressIndicator()),
               )
             else if (error != null)
-              Padding(
-                padding: const EdgeInsets.all(16),
+              const Padding(
+                padding: EdgeInsets.all(16),
                 child: Center(
                   child: Text(
                     'Failed to load data',
@@ -2714,72 +3294,72 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16)),
                         child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(children: [
-                            _sumRow('Original Fee', formatINR(totals['original'] ?? 0)),
-                            const Divider(),
-                            _sumRow('Effective Fee', formatINR(totals['effective'] ?? 0)),
-                            const Divider(),
-                            _sumRow('Total Received', formatINR(totals['received'] ?? 0)),
-                            const Divider(),
-                            _sumRow('Total Concession', formatINR(totals['concession'] ?? 0)),
-                            const Divider(),
-                            _sumRow('Total Fine (remaining)', formatINR(totals['fineRemaining'] ?? 0)),
-                            const Divider(),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Text('Previous Balance', style: TextStyle(fontWeight: FontWeight.w800)),
-                                Text(
-                                  formatINR(totals['prevBalanceDue'] ?? 0),
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    color: (totals['prevBalanceDue'] ?? 0) > 0 ? Colors.red : Colors.green,
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            children: [
+                              _sectionTitle('Overview Summary'),
+                              const SizedBox(height: 12),
+                              _sumRow('Original Fee', formatINR(totals['original'] ?? 0)),
+                              const Divider(),
+                              _sumRow('Effective Fee', formatINR(totals['effective'] ?? 0)),
+                              const Divider(),
+                              _sumRow('Total Received', formatINR(totals['received'] ?? 0)),
+                              const Divider(),
+                              _sumRow('Total Concession', formatINR(totals['concession'] ?? 0)),
+                              const Divider(),
+                              _sumRow('Academic Due', formatINR(payable['academicDue'] ?? 0)),
+                              const Divider(),
+                              _sumRow('Fine Due', formatINR(payable['fineDue'] ?? 0)),
+                              const Divider(),
+                              _sumRow('Previous Balance', formatINR(payable['prevBalanceDue'] ?? 0),
+                                  valueColor: (payable['prevBalanceDue'] ?? 0) > 0
+                                      ? Colors.red
+                                      : Colors.green),
+                              if (transportEnabled) ...[
+                                const Divider(),
+                                _sumRow('Van Received', formatINR(totals['vanReceived'] ?? 0)),
+                                const Divider(),
+                                _sumRow('Transport Due', formatINR(payable['vanDue'] ?? 0),
+                                    valueColor: (payable['vanDue'] ?? 0) > 0
+                                        ? Colors.red
+                                        : Colors.green),
+                              ],
+                              const Divider(),
+                              _sumRowBold(
+                                'Total Payable',
+                                formatINR(payable['totalPayable'] ?? 0),
+                                valueColor: (payable['totalPayable'] ?? 0) > 0
+                                    ? _slate
+                                    : Colors.green,
+                              ),
+                              const SizedBox(height: 14),
+                              if (transportEnabled) ...[
+                                const SizedBox(height: 10),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton.icon(
+                                    onPressed: ((totals['vanDue'] ?? 0) +
+                                                (totals['prevBalanceDue'] ?? 0)) >
+                                            0
+                                        ? handlePayVanFee
+                                        : null,
+                                    icon: const Icon(Icons.credit_card),
+                                    label: Text((totals['prevBalanceDue'] ?? 0) > 0
+                                        ? 'Pay Van Fee (incl. OB)'
+                                        : 'Pay Van Fee'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: _emerald,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(14)),
+                                      padding:
+                                          const EdgeInsets.symmetric(vertical: 12),
+                                    ),
                                   ),
                                 ),
                               ],
-                            ),
-                            const Divider(),
-                            _sumRowBold('Total Due (Academic)', formatINR(totals['due'] ?? 0)),
-
-                            if (transportEnabled) ...[
-                              const SizedBox(height: 12),
-                              _sumRow('Van Received', formatINR(totals['vanReceived'] ?? 0)),
-                              const Divider(),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text('Van Due', style: TextStyle(fontWeight: FontWeight.w700)),
-                                  Text(
-                                    formatINR(totals['vanDue'] ?? 0),
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w900,
-                                      color: (totals['vanDue'] ?? 0) > 0 ? Colors.red : Colors.green,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton.icon(
-                                  onPressed: ((totals['vanDue'] ?? 0) + (totals['prevBalanceDue'] ?? 0)) > 0
-                                      ? handlePayVanFee
-                                      : null,
-                                  icon: const Icon(Icons.credit_card),
-                                  label: Text(
-                                    (totals['prevBalanceDue'] ?? 0) > 0 ? 'Pay Van Fee (incl. OB)' : 'Pay Van Fee',
-                                  ),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: _emerald,
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
-                                  ),
-                                ),
-                              ),
                             ],
-                          ]),
+                          ),
                         ),
                       ),
                     ],
@@ -2793,22 +3373,67 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
     );
   }
 
-  Widget _sumRow(String label, String value) {
+  Widget _sectionTitle(String title) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.w800)),
+        Container(
+          width: 8,
+          height: 8,
+          decoration: const BoxDecoration(
+            color: _indigo,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+        ),
       ],
     );
   }
 
-  Widget _sumRowBold(String label, String value) {
+  Widget _sumRow(String label, String value, {Color? valueColor}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: const TextStyle(fontWeight: FontWeight.w900)),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.w900)),
+        Flexible(
+            child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600))),
+        const SizedBox(width: 10),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: valueColor,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _sumRowBold(String label, String value, {Color? valueColor}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Flexible(
+          child: Text(label,
+              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15)),
+        ),
+        const SizedBox(width: 10),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 15,
+              color: valueColor,
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -2824,7 +3449,7 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
         if (Platform.isAndroid) {
           try {
             final res = await _hyperSDK.onBackPress();
-            return res.toString().toLowerCase() != "true";
+            return res.toString().toLowerCase() != 'true';
           } catch (_) {
             return true;
           }
@@ -2833,9 +3458,9 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
       },
       child: Scaffold(
         appBar: _gradientAppBar(),
-        backgroundColor: const Color(0xFFF6F9FF),
+        backgroundColor: _softBg,
         body: RefreshIndicator(
-          onRefresh: () async => await _loadFamilyAndActive(),
+          onRefresh: () async => _loadFamilyAndActive(),
           color: _indigo,
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),

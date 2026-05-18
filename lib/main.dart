@@ -1,5 +1,6 @@
 // lib/main.dart
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -13,7 +14,7 @@ import 'constants/constants.dart'; // ✅ single source of truth (LIVE baseUrl)
 
 // auth / base screens
 import 'screens/login_screen.dart';
-import 'screens/dashboard_screen.dart';
+import 'screens/dashboard_screen.dart' as dashboard;
 
 // student screens
 import 'screens/contact_list_screen.dart';
@@ -24,6 +25,7 @@ import 'screens/student_attendance_screen.dart';
 import 'screens/student_circulars_screen.dart';
 import 'screens/leave_page.dart';
 import 'screens/student_diary_screen.dart';
+import 'screens/student_messages_screen.dart';
 
 // teacher screens
 import 'screens/teacher/teacher_dashboard.dart';
@@ -34,6 +36,7 @@ import 'screens/teacher/substitution_listing.dart';
 import 'screens/teacher/substituted_listing.dart';
 import 'screens/teacher/teacher_leave_requests.dart';
 import 'screens/teacher/teacher_digital_diary_screen.dart';
+import 'screens/teacher/teacher_messages_screen.dart';
 
 // ✅ NEW: My Attendance Calendar screen
 import 'screens/teacher/my_attendance_calendar.dart';
@@ -65,7 +68,7 @@ Future<void> main() async {
     debugPrint('❌ Firebase.initializeApp() failed: $e\n$st');
   }
 
-  // ✅ Register background handler (fix your warning)
+  // ✅ Register background handler
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
   final prefs = await SharedPreferences.getInstance();
@@ -87,7 +90,7 @@ Future<void> main() async {
     }
   }
 
-  // ✅ Init notifications + sync token to backend
+  // ✅ Init notifications + sync token to backend using authenticated register-device route
   try {
     await NotificationService.initialize(
       onToken: (fcmToken) async {
@@ -103,17 +106,20 @@ Future<void> main() async {
   }
 
   final authToken = prefs.getString('authToken');
-  final activeRole = (prefs.getString('activeRole') ?? '').toLowerCase();
+  final activeRole =
+      (prefs.getString('activeRole') ?? '').toLowerCase();
 
-  final initialRoute =
-      authToken == null ? '/login' : (activeRole == 'teacher' ? '/teacher' : '/dashboard');
+  final initialRoute = authToken == null
+      ? '/login'
+      : (activeRole == 'teacher' ? '/teacher' : '/dashboard');
 
   runApp(StudentApp(initialRoute: initialRoute));
 }
 
 /// Save token locally + send to backend
-/// ✅ Backend route: POST {baseUrl}/fcm/save-token
-/// Body: { userId, fcmToken }
+/// ✅ Backend route: POST {baseUrl}/api/notifications/register-device
+/// Body: { token, platform, deviceName, systemVersion }
+/// Auth: Bearer {authToken}
 Future<void> _persistAndSendToken({
   required SharedPreferences prefs,
   required String baseUrl,
@@ -122,45 +128,51 @@ Future<void> _persistAndSendToken({
   try {
     await prefs.setString('fcmToken', fcmToken);
 
-    final userId = _resolveUserIdFromPrefs(prefs);
+    final authToken =
+        prefs.getString('authToken') ?? prefs.getString('token');
 
-    if (userId.isEmpty) {
+    if (authToken == null || authToken.trim().isEmpty) {
       debugPrint(
-        '⚠️ FCM token generated but userId not found in prefs. Token saved locally only.',
+        '⚠️ FCM token generated but auth token not found. Token saved locally only.',
       );
+      await prefs.setBool('fcmTokenSynced', false);
       return;
     }
 
-    // ✅ IMPORTANT FIX: route matches your backend fcmRoutes
-    final uri = Uri.parse(
-      '${baseUrl.replaceAll(RegExp(r"/+$"), "")}/fcm/save-token',
-    );
+    final cleanBase = baseUrl.replaceAll(RegExp(r'/+$'), '');
+
+    // Constants.apiBase in your app appears to be domain/root based (not /api-prefixed)
+    // so register-device should go to /api/notifications/register-device.
+    final uri = Uri.parse('$cleanBase/api/notifications/register-device');
 
     final payload = {
-      "userId": userId, // ✅ admission number preferred
-      "fcmToken": fcmToken,
+      'token': fcmToken,
+      'platform': Platform.isAndroid ? 'android' : 'ios',
+      'deviceName': 'Student App',
+      'systemVersion': Platform.operatingSystemVersion,
     };
 
-    debugPrint('📡 Saving FCM token to backend: $uri for userId=$userId');
+    debugPrint('📡 Registering device token to backend: $uri');
 
     final resp = await http
         .post(
           uri,
           headers: {
+            'Authorization': 'Bearer $authToken',
             'Content-Type': 'application/json',
-            // If your backend protects this route with JWT, uncomment:
-            // 'Authorization': 'Bearer ${prefs.getString('authToken') ?? ""}',
+            'Accept': 'application/json',
           },
           body: jsonEncode(payload),
         )
         .timeout(const Duration(seconds: 20));
 
     if (resp.statusCode >= 200 && resp.statusCode < 300) {
-      debugPrint('✅ FCM token saved to backend successfully');
+      debugPrint('✅ Device registered successfully');
+      debugPrint('register-device body: ${resp.body}');
       await prefs.setBool('fcmTokenSynced', true);
     } else {
       debugPrint(
-        '⚠️ Failed to save FCM token. Status=${resp.statusCode} Body=${resp.body}',
+        '⚠️ register-device failed. Status=${resp.statusCode} Body=${resp.body}',
       );
       await prefs.setBool('fcmTokenSynced', false);
     }
@@ -168,23 +180,6 @@ Future<void> _persistAndSendToken({
     debugPrint('⚠️ _persistAndSendToken failed: $e\n$st');
     await prefs.setBool('fcmTokenSynced', false);
   }
-}
-
-/// Prefer admission_number (best match for diary notification mapping).
-String _resolveUserIdFromPrefs(SharedPreferences prefs) {
-  final candidates = <String>[
-    prefs.getString('admission_number') ?? '',
-    prefs.getString('admissionNumber') ?? '',
-    prefs.getString('username') ?? '',
-    prefs.getString('userId') ?? '',
-    prefs.getString('studentId') ?? '',
-  ];
-
-  for (final v in candidates) {
-    final s = v.trim();
-    if (s.isNotEmpty) return s;
-  }
-  return '';
 }
 
 class StudentApp extends StatelessWidget {
@@ -211,26 +206,33 @@ class StudentApp extends StatelessWidget {
         builder: (context, child) => child ?? const SizedBox.shrink(),
         routes: {
           '/login': (context) => const LoginScreen(),
-          '/dashboard': (context) => const DashboardScreen(),
+          '/dashboard': (context) => dashboard.DashboardScreen(),
 
           // Teacher
           '/teacher': (context) => const TeacherDashboard(),
           '/teacher/attendance': (context) => const MarkAttendanceScreen(),
 
           // ✅ Teacher: approve/reject STUDENT leave requests
-          '/teacher/leave-requests': (context) => const TeacherLeaveRequestsScreen(),
+          '/teacher/leave-requests': (context) =>
+              const TeacherLeaveRequestsScreen(),
 
           // ✅ Teacher: apply for OWN leave + view status
-          '/teacher/my-leaves': (context) => const TeacherMyLeaveRequestsScreen(),
+          '/teacher/my-leaves': (context) =>
+              const TeacherMyLeaveRequestsScreen(),
 
           '/teacher/circulars': (context) => const TeacherCircularsScreen(),
-          '/teacher-timetable-display': (context) => const TeacherTimetableDisplayScreen(),
-          '/teacher/substitutions': (context) => const TeacherSubstitutionListing(),
-          '/teacher/substituted': (context) => const TeacherSubstitutedListing(),
+          '/teacher-timetable-display': (context) =>
+              const TeacherTimetableDisplayScreen(),
+          '/teacher/substitutions': (context) =>
+              const TeacherSubstitutionListing(),
+          '/teacher/substituted': (context) =>
+              const TeacherSubstitutedListing(),
           '/teacher/diary': (context) => const TeacherDigitalDiaryScreen(),
+          '/teacher/messages': (context) => const TeacherMessagesScreen(),
 
           // ✅ NEW: My Attendance Calendar (Teacher)
-          '/my-attendance-calendar': (context) => const MyAttendanceCalendarScreen(),
+          '/my-attendance-calendar': (context) =>
+              const MyAttendanceCalendarScreen(),
 
           // Student
           '/contacts': (context) => const ContactListScreen(),
@@ -243,18 +245,44 @@ class StudentApp extends StatelessWidget {
           '/leave': (context) => LeavePage(),
           '/diaries': (context) => const StudentDiaryScreen(),
           '/student-diary': (context) => const StudentDiaryScreen(),
+          '/messages': (context) => const StudentMessagesScreen(),
 
           // ❌ REMOVED COMPLETELY:
           // '/chat': (context) => ChatScreen(...)
         },
 
-        // ✅ Optional: if any old code tries to open "/chat", route it safely
+        // ✅ Optional: handle old routes + notification deep-link routes safely
         onGenerateRoute: (settings) {
+          int? extractThreadId(Object? args) {
+            if (args is int) return args;
+            if (args is String) return int.tryParse(args);
+            if (args is Map) {
+              final raw = args['threadId'] ?? args['thread_id'];
+              return raw is int ? raw : int.tryParse('${raw ?? ''}');
+            }
+            return null;
+          }
+
           if (settings.name == '/chat') {
             return MaterialPageRoute(
-              builder: (_) => const DashboardScreen(),
+              builder: (_) => dashboard.DashboardScreen(),
             );
           }
+
+          if (settings.name == '/messages/thread') {
+            final threadId = extractThreadId(settings.arguments);
+            return MaterialPageRoute(
+              builder: (_) => StudentMessagesScreen(openThreadId: threadId),
+            );
+          }
+
+          if (settings.name == '/teacher/messages/thread') {
+            final threadId = extractThreadId(settings.arguments);
+            return MaterialPageRoute(
+              builder: (_) => TeacherMessagesScreen(openThreadId: threadId),
+            );
+          }
+
           return null;
         },
       ),
