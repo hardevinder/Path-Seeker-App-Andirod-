@@ -3,6 +3,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/student_message.dart';
@@ -11,9 +12,17 @@ import '../services/api_service.dart';
 class StudentMessagesScreen extends StatefulWidget {
   final int? openThreadId;
 
+  /// Used when dashboard opens messages after sibling switch.
+  /// Backend will verify that this admission number belongs to the logged-in
+  /// student or one of the logged-in student's siblings.
+  final String? selectedAdmissionNumber;
+  final String? selectedStudentName;
+
   const StudentMessagesScreen({
     super.key,
     this.openThreadId,
+    this.selectedAdmissionNumber,
+    this.selectedStudentName,
   });
 
   @override
@@ -27,18 +36,31 @@ class _StudentMessagesScreenState extends State<StudentMessagesScreen> {
   String _type = '';
   String _query = '';
 
+  String? _activeAdmissionNumber;
+  String? _activeStudentName;
+
   final _searchController = TextEditingController();
   Timer? _debounce;
+
+  String? get _admissionForApi {
+    final text = (_activeAdmissionNumber ?? widget.selectedAdmissionNumber ?? '').trim();
+    return text.isEmpty ? null : text;
+  }
+
+  String get _studentTitleText {
+    final name = (_activeStudentName ?? widget.selectedStudentName ?? '').trim();
+    final adm = (_admissionForApi ?? '').trim();
+
+    if (name.isNotEmpty && adm.isNotEmpty) return '$name • Adm $adm';
+    if (name.isNotEmpty) return name;
+    if (adm.isNotEmpty) return 'Adm $adm';
+    return 'Fee reminders, teacher messages & replies';
+  }
 
   @override
   void initState() {
     super.initState();
-    _load().then((_) {
-      final id = widget.openThreadId;
-      if (id != null && id > 0 && mounted) {
-        _openThreadById(id);
-      }
-    });
+    _bootstrap();
   }
 
   @override
@@ -46,6 +68,49 @@ class _StudentMessagesScreenState extends State<StudentMessagesScreen> {
     _debounce?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _bootstrap() async {
+    if (!mounted) return;
+    setState(() => _loading = true);
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      final selectedFromWidget = (widget.selectedAdmissionNumber ?? '').trim();
+      final selectedFromPrefs =
+          (prefs.getString('selectedStudentAdmissionNumber') ??
+                  prefs.getString('activeStudentAdmission') ??
+                  '')
+              .trim();
+
+      final selectedNameFromWidget = (widget.selectedStudentName ?? '').trim();
+      final selectedNameFromPrefs =
+          (prefs.getString('selectedStudentName') ??
+                  prefs.getString('activeStudentName') ??
+                  '')
+              .trim();
+
+      if (!mounted) return;
+      setState(() {
+        _activeAdmissionNumber =
+            selectedFromWidget.isNotEmpty ? selectedFromWidget : selectedFromPrefs;
+        _activeStudentName =
+            selectedNameFromWidget.isNotEmpty ? selectedNameFromWidget : selectedNameFromPrefs;
+      });
+
+      await _load();
+
+      final id = widget.openThreadId;
+      if (id != null && id > 0 && mounted) {
+        await _openThreadById(id);
+      }
+    } catch (e, st) {
+      debugPrint('Student messages bootstrap error: $e\n$st');
+      if (mounted) {
+        await _load();
+      }
+    }
   }
 
   Future<void> _load() async {
@@ -59,6 +124,7 @@ class _StudentMessagesScreenState extends State<StudentMessagesScreen> {
         type: _type.isEmpty ? null : _type,
         search: _query.trim().isEmpty ? null : _query.trim(),
         unreadOnly: _unreadOnly,
+        admissionNumber: _admissionForApi,
       );
 
       if (!mounted) return;
@@ -78,6 +144,7 @@ class _StudentMessagesScreenState extends State<StudentMessagesScreen> {
   void _onSearchChanged(String value) {
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
       setState(() => _query = value);
       _load();
     });
@@ -86,7 +153,11 @@ class _StudentMessagesScreenState extends State<StudentMessagesScreen> {
   Future<void> _openThreadById(int threadId) async {
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => StudentMessageThreadScreen(threadId: threadId),
+        builder: (_) => StudentMessageThreadScreen(
+          threadId: threadId,
+          selectedAdmissionNumber: _admissionForApi,
+          selectedStudentName: _activeStudentName ?? widget.selectedStudentName,
+        ),
       ),
     );
     if (mounted) _load();
@@ -340,7 +411,9 @@ class _StudentMessagesScreenState extends State<StudentMessagesScreen> {
                         ),
                         const SizedBox(height: 5),
                         Text(
-                          'Fee reminders, teacher messages & replies',
+                          _studentTitleText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: Colors.white.withOpacity(.92)),
                         ),
                       ]),
@@ -366,7 +439,6 @@ class _StudentMessagesScreenState extends State<StudentMessagesScreen> {
                 ),
               ]),
             ),
-
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
               child: Column(children: [
@@ -432,7 +504,6 @@ class _StudentMessagesScreenState extends State<StudentMessagesScreen> {
                 ),
               ]),
             ),
-
             Expanded(
               child: RefreshIndicator(
                 onRefresh: _load,
@@ -441,20 +512,23 @@ class _StudentMessagesScreenState extends State<StudentMessagesScreen> {
                     : _messages.isEmpty
                         ? ListView(
                             padding: const EdgeInsets.fromLTRB(16, 45, 16, 20),
-                            children: const [
-                              Icon(Icons.chat_bubble_outline_rounded, size: 62, color: Colors.black26),
-                              SizedBox(height: 14),
-                              Center(
+                            children: [
+                              const Icon(Icons.chat_bubble_outline_rounded, size: 62, color: Colors.black26),
+                              const SizedBox(height: 14),
+                              const Center(
                                 child: Text(
                                   'No messages found',
                                   style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
                                 ),
                               ),
-                              SizedBox(height: 6),
+                              const SizedBox(height: 6),
                               Center(
                                 child: Text(
-                                  'Try refresh or change filters.',
-                                  style: TextStyle(color: Colors.black54),
+                                  _admissionForApi == null
+                                      ? 'Try refresh or change filters.'
+                                      : 'Try refresh or change filters for Adm $_admissionForApi.',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(color: Colors.black54),
                                 ),
                               ),
                             ],
@@ -481,10 +555,14 @@ class _StudentMessagesScreenState extends State<StudentMessagesScreen> {
 
 class StudentMessageThreadScreen extends StatefulWidget {
   final int threadId;
+  final String? selectedAdmissionNumber;
+  final String? selectedStudentName;
 
   const StudentMessageThreadScreen({
     super.key,
     required this.threadId,
+    this.selectedAdmissionNumber,
+    this.selectedStudentName,
   });
 
   @override
@@ -496,8 +574,26 @@ class _StudentMessageThreadScreenState extends State<StudentMessageThreadScreen>
   bool _loading = true;
   bool _sending = false;
   bool _hasReplyText = false;
+  String? _activeAdmissionNumber;
+  String? _activeStudentName;
+
   final _replyController = TextEditingController();
   final _scrollController = ScrollController();
+
+  String? get _admissionForApi {
+    final text = (_activeAdmissionNumber ?? widget.selectedAdmissionNumber ?? '').trim();
+    return text.isEmpty ? null : text;
+  }
+
+  String get _threadSubtitle {
+    final name = (_activeStudentName ?? widget.selectedStudentName ?? '').trim();
+    final adm = (_admissionForApi ?? '').trim();
+
+    if (name.isNotEmpty && adm.isNotEmpty) return '$name • Adm $adm';
+    if (name.isNotEmpty) return name;
+    if (adm.isNotEmpty) return 'Adm $adm';
+    return '';
+  }
 
   @override
   void initState() {
@@ -508,7 +604,7 @@ class _StudentMessageThreadScreenState extends State<StudentMessageThreadScreen>
         setState(() => _hasReplyText = hasText);
       }
     });
-    _load();
+    _bootstrap();
   }
 
   @override
@@ -518,12 +614,46 @@ class _StudentMessageThreadScreenState extends State<StudentMessageThreadScreen>
     super.dispose();
   }
 
+  Future<void> _bootstrap() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      final selectedFromWidget = (widget.selectedAdmissionNumber ?? '').trim();
+      final selectedFromPrefs =
+          (prefs.getString('selectedStudentAdmissionNumber') ??
+                  prefs.getString('activeStudentAdmission') ??
+                  '')
+              .trim();
+
+      final selectedNameFromWidget = (widget.selectedStudentName ?? '').trim();
+      final selectedNameFromPrefs =
+          (prefs.getString('selectedStudentName') ??
+                  prefs.getString('activeStudentName') ??
+                  '')
+              .trim();
+
+      if (!mounted) return;
+      setState(() {
+        _activeAdmissionNumber =
+            selectedFromWidget.isNotEmpty ? selectedFromWidget : selectedFromPrefs;
+        _activeStudentName =
+            selectedNameFromWidget.isNotEmpty ? selectedNameFromWidget : selectedNameFromPrefs;
+      });
+    } catch (_) {}
+
+    await _load();
+  }
+
   Future<void> _load() async {
     if (!mounted) return;
     setState(() => _loading = true);
 
     try {
-      final thread = await ApiService.fetchStudentMessageThread(widget.threadId);
+      final thread = await ApiService.fetchStudentMessageThread(
+        widget.threadId,
+        admissionNumber: _admissionForApi,
+      );
+
       if (!mounted) return;
       setState(() => _thread = thread);
 
@@ -554,6 +684,7 @@ class _StudentMessageThreadScreenState extends State<StudentMessageThreadScreen>
       await ApiService.replyToStudentMessageThread(
         threadId: widget.threadId,
         body: body,
+        admissionNumber: _admissionForApi,
       );
       _replyController.clear();
       await _load();
@@ -736,6 +867,17 @@ class _StudentMessageThreadScreenState extends State<StudentMessageThreadScreen>
                               fontSize: 18,
                             ),
                           ),
+                          if (_threadSubtitle.isNotEmpty) ...[
+                            const SizedBox(height: 5),
+                            Text(
+                              _threadSubtitle,
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(.90),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12.5,
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 8),
                           Wrap(
                             spacing: 8,
@@ -1037,7 +1179,6 @@ class _FilterChip2 extends StatelessWidget {
     );
   }
 }
-
 
 String _absoluteFileUrl(String url) {
   final clean = url.trim();

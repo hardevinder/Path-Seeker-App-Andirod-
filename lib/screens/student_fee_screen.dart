@@ -1816,6 +1816,8 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
     final totalPayable = payable['totalPayable'] ?? 0.0;
     final vanDue = payable['vanDue'] ?? 0.0;
     final prevDue = payable['prevBalanceDue'] ?? 0.0;
+    final showPrevPayment = prevDue > 0;
+    final showVanPayment = transportEnabled && vanDue > 0;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -2011,48 +2013,30 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
             ),
           ),
 
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: prevDue > 0 ? handlePayPreviousBalanceOnly : null,
-                  icon: const Icon(Icons.account_balance_wallet_outlined),
-                  label: const Text('Pay Prev. Balance'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: _slate,
-                    disabledBackgroundColor: Colors.white.withOpacity(0.22),
-                    disabledForegroundColor: Colors.white70,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+          if (showPrevPayment || showVanPayment) ...[
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                if (showPrevPayment)
+                  Expanded(
+                    child: _heroPaymentButton(
+                      icon: Icons.account_balance_wallet_outlined,
+                      label: 'Pay Previous Balance',
+                      onPressed: handlePayPreviousBalanceOnly,
                     ),
                   ),
-                ),
-              ),
-              if (transportEnabled) ...[
-                const SizedBox(width: 10),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: (vanDue + prevDue) > 0 ? handlePayVanFee : null,
-                    icon: const Icon(Icons.credit_card),
-                    label: const Text('Pay Van / OB'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: _slate,
-                      disabledBackgroundColor: Colors.white.withOpacity(0.22),
-                      disabledForegroundColor: Colors.white70,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
+                if (showPrevPayment && showVanPayment) const SizedBox(width: 10),
+                if (showVanPayment)
+                  Expanded(
+                    child: _heroPaymentButton(
+                      icon: Icons.local_shipping_rounded,
+                      label: vanDue > 0 ? 'Pay Van / OB' : 'Pay OB',
+                      onPressed: handlePayVanFee,
                     ),
                   ),
-                ),
               ],
-            ],
-          ),
+            ),
+          ],
 
           const SizedBox(height: 14),
           SizedBox(
@@ -2099,6 +2083,31 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _heroPaymentButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    return ElevatedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 18),
+      label: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.white,
+        foregroundColor: _slate,
+        elevation: 0,
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
       ),
     );
   }
@@ -2609,6 +2618,20 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
               ),
               child: Row(
                 children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.80),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      Icons.account_balance_wallet_outlined,
+                      color: Colors.orange.shade800,
+                      size: 19,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
                   const Expanded(
                     child: Text(
                       'Previous Balance',
@@ -2649,7 +2672,7 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
                       border: Border.all(color: Colors.orange.shade100),
                     ),
                     child: const Text(
-                      'This is the carry-forward balance from previous dues and is now shown as the first fee heading.',
+                      'This is the carry-forward balance from previous dues. It can be paid separately, and it is also included when paying any pending fee head.',
                       style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
                     ),
                   ),
@@ -3220,6 +3243,194 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
     );
   }
 
+  Widget _summaryPaymentActions({
+    required Map<String, double> totals,
+    required Map<String, double> payable,
+    required bool transportEnabled,
+  }) {
+    final prevDue = payable['prevBalanceDue'] ?? 0.0;
+    final vanDue = payable['vanDue'] ?? 0.0;
+    final totalPayable = payable['totalPayable'] ?? 0.0;
+
+    final showPrev = prevDue > 0;
+    final showVan = transportEnabled && vanDue > 0;
+
+    if (totalPayable <= 0 || (!showPrev && !showVan)) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.black.withOpacity(0.06)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: _indigo.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.payments_rounded,
+                  color: _indigo,
+                  size: 19,
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Payment Actions',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14,
+                    color: _slate,
+                  ),
+                ),
+              ),
+              Text(
+                formatINR(totalPayable),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: _slate,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (showPrev) ...[
+            _summaryPayButton(
+              icon: Icons.account_balance_wallet_outlined,
+              title: 'Pay Previous Balance',
+              subtitle: 'Outstanding: ${formatINR(prevDue)}',
+              buttonText: 'Pay Now',
+              amount: formatINR(prevDue),
+              onPressed: handlePayPreviousBalanceOnly,
+              color: _indigo,
+            ),
+          ],
+          if (showPrev && showVan) const SizedBox(height: 10),
+          if (showVan) ...[
+            _summaryPayButton(
+              icon: Icons.local_shipping_rounded,
+              title: vanDue > 0 ? 'Pay Van Fee' : 'Pay Previous Balance',
+              subtitle: vanDue > 0
+                  ? 'Van due: ${formatINR(vanDue)}${prevDue > 0 ? ' + Previous Balance' : ''}'
+                  : 'Included amount: ${formatINR(prevDue)}',
+              buttonText: vanDue > 0 ? 'Pay Van / OB' : 'Pay OB',
+              amount: formatINR(vanDue + prevDue),
+              onPressed: handlePayVanFee,
+              color: _emerald,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryPayButton({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required String buttonText,
+    required String amount,
+    required VoidCallback onPressed,
+    required Color color,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.black.withOpacity(0.06)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.035),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(icon, color: color, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 13.5,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: Colors.black54,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                amount,
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: onPressed,
+              icon: const Icon(Icons.credit_card_rounded, size: 18),
+              label: Text(buttonText),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: color,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   /* =========================================================
     Tabs Card
   ========================================================= */
@@ -3332,32 +3543,11 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
                                     ? _slate
                                     : Colors.green,
                               ),
-                              const SizedBox(height: 14),
-                              if (transportEnabled) ...[
-                                const SizedBox(height: 10),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: ElevatedButton.icon(
-                                    onPressed: ((totals['vanDue'] ?? 0) +
-                                                (totals['prevBalanceDue'] ?? 0)) >
-                                            0
-                                        ? handlePayVanFee
-                                        : null,
-                                    icon: const Icon(Icons.credit_card),
-                                    label: Text((totals['prevBalanceDue'] ?? 0) > 0
-                                        ? 'Pay Van Fee (incl. OB)'
-                                        : 'Pay Van Fee'),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: _emerald,
-                                      foregroundColor: Colors.white,
-                                      shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(14)),
-                                      padding:
-                                          const EdgeInsets.symmetric(vertical: 12),
-                                    ),
-                                  ),
-                                ),
-                              ],
+                              _summaryPaymentActions(
+                                totals: totals,
+                                payable: payable,
+                                transportEnabled: transportEnabled,
+                              ),
                             ],
                           ),
                         ),

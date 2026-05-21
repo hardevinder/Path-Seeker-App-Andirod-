@@ -31,8 +31,8 @@ android {
         minSdk = 24
         targetSdk = 36
 
-        versionCode = 45
-        versionName = "1.0.30"
+        versionCode = 46
+        versionName = "1.0.31"
 
         multiDexEnabled = true
 

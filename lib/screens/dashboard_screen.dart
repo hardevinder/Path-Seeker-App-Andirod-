@@ -599,16 +599,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _fetchMessagesSummary(Map<String, String> headers) async {
     try {
+      final activeAdmission = _activeAdmissionNumber();
+
       final uri = Uri.parse('$baseUrl/api/messages/me').replace(
         queryParameters: {
           'page': '1',
           'limit': '5',
           'unreadOnly': 'false',
+          if (activeAdmission.isNotEmpty) 'admissionNumber': activeAdmission,
         },
       );
 
       final res = await http.get(uri, headers: headers);
-      if (res.statusCode != 200) return;
+      if (res.statusCode != 200) {
+        if (!mounted) return;
+        setState(() {
+          messageTotal = 0;
+          messageUnread = 0;
+          latestMessagePreview = '';
+        });
+        return;
+      }
 
       final decoded = jsonDecode(res.body);
       final json = _asMap(decoded);
@@ -623,16 +634,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
         final map = _asMap(row);
         if (map == null) continue;
 
-        if (map['lastReadAt'] == null && map['last_read_at'] == null) {
-          unread++;
-        }
+        final isUnread = map['isUnread'] == true ||
+            map['unread'] == true ||
+            (map['lastReadAt'] == null && map['last_read_at'] == null);
+
+        if (isUnread) unread++;
 
         if (preview.isEmpty) {
           final thread = _asMap(map['thread']);
           final messages = _asList(thread?['messages']);
           final latest = messages.isNotEmpty ? _asMap(messages.first) : null;
-          final body = _stringValue(latest?['body']);
-          final subject = _stringValue(thread?['subject']);
+          final body = _stringValue(latest?['body']) ??
+              _stringValue(map['latestMessage']) ??
+              _stringValue(map['lastMessage']) ??
+              _stringValue(map['body']);
+          final subject = _stringValue(thread?['subject']) ?? _stringValue(map['subject']);
 
           preview = body ?? subject ?? '';
         }
@@ -1266,6 +1282,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('selectedStudentAdmissionNumber', selected);
+    await prefs.setString('activeStudentAdmission', selected);
 
     if (!mounted) return;
     setState(() {
@@ -1290,6 +1307,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       photoUrl = null;
       feeTotalDue = 0;
       feeVanDue = 0;
+      messageTotal = 0;
+      messageUnread = 0;
+      latestMessagePreview = '';
       siblingStudents = [];
     });
 
@@ -2560,10 +2580,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return '$years yrs';
   }
 
-  void _openMessages() {
+  Future<void> _openMessages() async {
+    final activeAdmission = _activeAdmissionNumber();
+
+    // Keep shared preferences synced so StudentMessagesScreen can also read
+    // the selected sibling even if it does not receive constructor arguments.
+    final prefs = await SharedPreferences.getInstance();
+    if (activeAdmission.isNotEmpty) {
+      await prefs.setString('selectedStudentAdmissionNumber', activeAdmission);
+      await prefs.setString('activeStudentAdmission', activeAdmission);
+    }
+
+    if (!mounted) return;
+
     Navigator.push(
       context,
       MaterialPageRoute(
+        settings: RouteSettings(
+          arguments: {
+            'selectedAdmissionNumber': activeAdmission,
+            'admissionNumber': activeAdmission,
+            'studentName': studentName,
+          },
+        ),
+        // Constructor is kept unchanged for compatibility.
+        // StudentMessagesScreen can read selected student from SharedPreferences
+        // or ModalRoute.of(context)?.settings.arguments.
         builder: (_) => const StudentMessagesScreen(),
       ),
     ).then((_) => _fetchAll());
