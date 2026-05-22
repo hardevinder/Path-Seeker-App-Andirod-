@@ -57,64 +57,94 @@ class ApiService {
   // Low-level HTTP helpers
   // ------------------------
 
-  static Future<http.Response> rawGet(String endpoint, {Map<String, String>? extraHeaders}) async {
+  static Future<http.Response> rawGet(
+    String endpoint, {
+    Map<String, String>? extraHeaders,
+  }) async {
     final uri = Uri.parse('$baseUrl$endpoint');
     final headers = await _buildHeaders(extraHeaders);
     final resp = await http.get(uri, headers: headers).timeout(_timeout);
+
     // ignore: avoid_print
     print('[ApiService] GET $uri → ${resp.statusCode}');
     return resp;
   }
 
-  static Future<http.Response> rawPost(String endpoint, Map<String, dynamic> body,
-      {Map<String, String>? extraHeaders}) async {
+  static Future<http.Response> rawPost(
+    String endpoint,
+    Map<String, dynamic> body, {
+    Map<String, String>? extraHeaders,
+  }) async {
     final uri = Uri.parse('$baseUrl$endpoint');
     final headers = await _buildHeaders({
       'Content-Type': 'application/json',
       if (extraHeaders != null) ...extraHeaders,
     });
-    final resp = await http.post(uri, headers: headers, body: jsonEncode(body)).timeout(_timeout);
+
+    final resp = await http
+        .post(
+          uri,
+          headers: headers,
+          body: jsonEncode(body),
+        )
+        .timeout(_timeout);
+
     // ignore: avoid_print
     print('[ApiService] POST $uri → ${resp.statusCode}');
     return resp;
   }
 
-  static Future<http.Response> rawPut(String endpoint, Map<String, dynamic> body,
-      {Map<String, String>? extraHeaders}) async {
+  static Future<http.Response> rawPut(
+    String endpoint,
+    Map<String, dynamic> body, {
+    Map<String, String>? extraHeaders,
+  }) async {
     final uri = Uri.parse('$baseUrl$endpoint');
     final headers = await _buildHeaders({
       'Content-Type': 'application/json',
       if (extraHeaders != null) ...extraHeaders,
     });
-    final resp = await http.put(uri, headers: headers, body: jsonEncode(body)).timeout(_timeout);
+
+    final resp = await http
+        .put(
+          uri,
+          headers: headers,
+          body: jsonEncode(body),
+        )
+        .timeout(_timeout);
+
     // ignore: avoid_print
     print('[ApiService] PUT $uri → ${resp.statusCode}');
     return resp;
   }
 
-  static Future<http.Response> rawDelete(String endpoint, {Map<String, String>? extraHeaders}) async {
+  static Future<http.Response> rawDelete(
+    String endpoint, {
+    Map<String, String>? extraHeaders,
+  }) async {
     final uri = Uri.parse('$baseUrl$endpoint');
     final headers = await _buildHeaders(extraHeaders);
     final resp = await http.delete(uri, headers: headers).timeout(_timeout);
+
     // ignore: avoid_print
     print('[ApiService] DELETE $uri → ${resp.statusCode}');
     return resp;
   }
 
-
   // ------------------------
   // Student Messages
   // ------------------------
 
-  /// Fetch logged-in student's/staff user's message inbox.
+  /// Fetch logged-in student's / selected sibling student's message inbox.
   /// Backend:
-  /// GET /api/messages/me?page=&limit=&type=&q=&unreadOnly=
+  /// GET /api/messages/me?page=&limit=&type=&q=&unreadOnly=&admissionNumber=
   static Future<List<StudentMessageInboxItem>> fetchStudentMessages({
     int page = 1,
     int limit = 30,
     String? type,
     String? search,
     bool unreadOnly = false,
+    String? admissionNumber,
   }) async {
     final uri = Uri.parse('$baseUrl/api/messages/me').replace(
       queryParameters: {
@@ -123,6 +153,8 @@ class ApiService {
         if (type != null && type.trim().isNotEmpty) 'type': type.trim(),
         if (search != null && search.trim().isNotEmpty) 'q': search.trim(),
         'unreadOnly': unreadOnly ? 'true' : 'false',
+        if (admissionNumber != null && admissionNumber.trim().isNotEmpty)
+          'admissionNumber': admissionNumber.trim(),
       },
     );
 
@@ -165,11 +197,17 @@ class ApiService {
 
   /// Fetch one full message thread by thread id.
   /// Backend:
-  /// GET /api/messages/:threadId
+  /// GET /api/messages/:threadId?admissionNumber=
   static Future<StudentMessageThread> fetchStudentMessageThread(
-    int threadId,
-  ) async {
-    final uri = Uri.parse('$baseUrl/api/messages/$threadId');
+    int threadId, {
+    String? admissionNumber,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/messages/$threadId').replace(
+      queryParameters: {
+        if (admissionNumber != null && admissionNumber.trim().isNotEmpty)
+          'admissionNumber': admissionNumber.trim(),
+      },
+    );
 
     try {
       final headers = await _buildHeaders();
@@ -211,6 +249,7 @@ class ApiService {
   static Future<void> replyToStudentMessageThread({
     required int threadId,
     required String body,
+    String? admissionNumber,
   }) async {
     final cleanBody = body.trim();
     if (cleanBody.isEmpty) {
@@ -218,6 +257,12 @@ class ApiService {
     }
 
     final uri = Uri.parse('$baseUrl/api/messages/$threadId/reply');
+
+    final payload = <String, dynamic>{
+      'body': cleanBody,
+      if (admissionNumber != null && admissionNumber.trim().isNotEmpty)
+        'admissionNumber': admissionNumber.trim(),
+    };
 
     try {
       final headers = await _buildHeaders({
@@ -228,7 +273,7 @@ class ApiService {
           .post(
             uri,
             headers: headers,
-            body: jsonEncode({'body': cleanBody}),
+            body: jsonEncode(payload),
           )
           .timeout(_timeout);
 
@@ -275,11 +320,15 @@ class ApiService {
   /// Fetch circulars robustly: supports both `[{...},...]` and `{"circulars":[...]}`
   static Future<List<Circular>> fetchCirculars() async {
     const endpoint = '/circulars';
+
     try {
       final resp = await rawGet(endpoint);
       final body = resp.body;
+
       // ignore: avoid_print
-      print('[ApiService] fetchCirculars status=${resp.statusCode} bodyPreview=${body.length>200 ? body.substring(0,200) + "..." : body}');
+      print(
+        '[ApiService] fetchCirculars status=${resp.statusCode} bodyPreview=${body.length > 200 ? body.substring(0, 200) + "..." : body}',
+      );
 
       if (resp.statusCode == 401) {
         // unauthorized: helpful debug
@@ -305,11 +354,14 @@ class ApiService {
           return <Circular>[];
         }
 
-        final parsed = items.map((e) {
-          if (e is Map<String, dynamic>) return Circular.fromJson(e);
-          if (e is Map) return Circular.fromJson(Map<String, dynamic>.from(e));
-          return null;
-        }).whereType<Circular>().toList();
+        final parsed = items
+            .map((e) {
+              if (e is Map<String, dynamic>) return Circular.fromJson(e);
+              if (e is Map) return Circular.fromJson(Map<String, dynamic>.from(e));
+              return null;
+            })
+            .whereType<Circular>()
+            .toList();
 
         parsed.sort((a, b) => b.createdAt.compareTo(a.createdAt));
         return parsed;
