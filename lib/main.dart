@@ -11,10 +11,24 @@ import 'package:http/http.dart' as http;
 
 import 'firebase_options.dart';
 import 'constants/constants.dart'; // ✅ single source of truth (LIVE baseUrl)
+import 'auth/role_manager.dart';
 
 // auth / base screens
 import 'screens/login_screen.dart';
+import 'screens/role_selection_screen.dart';
 import 'screens/dashboard_screen.dart' as dashboard;
+import 'screens/coordinator_dashboard.dart';
+import 'screens/coordinator_attendance_summary_screen.dart';
+import 'screens/coordinator_academic_calendar_screen.dart';
+import 'screens/coordinator_circular_management_screen.dart';
+import 'screens/coordinator_digital_diary_monitor_screen.dart';
+import 'screens/coordinator_incharge_assignment_screen.dart';
+import 'screens/coordinator_subject_management_screen.dart';
+import 'screens/coordinator_students_view_screen.dart';
+import 'screens/coordinator_syllabus_approval_screen.dart';
+import 'screens/coordinator_substitution_assignment_screen.dart';
+import 'screens/coordinator_substitutions_screen.dart';
+import 'screens/coordinator_timetable_screen.dart';
 
 // student screens
 import 'screens/contact_list_screen.dart';
@@ -37,6 +51,40 @@ import 'screens/teacher/substituted_listing.dart';
 import 'screens/teacher/teacher_leave_requests.dart';
 import 'screens/teacher/teacher_digital_diary_screen.dart';
 import 'screens/teacher/teacher_messages_screen.dart';
+import 'screens/teacher/teacher_marks_entry_screen.dart';
+import 'screens/teacher/teacher_lesson_plan_screen.dart';
+
+// New role dashboards
+import 'screens/superadmin/superadmin_dashboard.dart';
+import 'screens/accounts/accounts_dashboard.dart';
+import 'screens/accounts/collect_fee_screen.dart';
+import 'screens/accounts/day_wise_report_screen.dart';
+import 'screens/accounts/fee_head_collection_report_screen.dart';
+import 'screens/accounts/student_due_report_screen.dart';
+import 'screens/hr/hr_dashboard.dart';
+import 'screens/transport/transport_dashboard.dart';
+import 'screens/examination/examination_dashboard.dart';
+
+// Superadmin sub-pages
+import 'screens/superadmin/school_settings_screen.dart';
+import 'screens/superadmin/user_management_screen.dart';
+import 'screens/superadmin/school_reports_screen.dart';
+import 'screens/superadmin/superadmin_transactions_screen.dart';
+
+// HR sub-pages
+import 'screens/hr/employee_management_screen.dart';
+import 'screens/hr/leave_attendance_screen.dart';
+import 'screens/hr/onboarding_screen.dart';
+
+// Transport sub-pages
+import 'screens/transport/routes_screen.dart';
+import 'screens/transport/pickup_tracking_screen.dart';
+import 'screens/transport/vehicle_status_screen.dart';
+
+// Examination sub-pages
+import 'screens/examination/schedule_screen.dart';
+import 'screens/examination/result_moderation_screen.dart';
+import 'screens/examination/reports_screen.dart';
 
 // ✅ NEW: My Attendance Calendar screen
 import 'screens/teacher/my_attendance_calendar.dart';
@@ -46,6 +94,7 @@ import 'screens/teacher/teacher_my_leave_requests_screen.dart';
 
 import 'services/notification_service.dart';
 import 'services/api_service.dart';
+import 'screens/admin/role_feature_screens.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -62,7 +111,8 @@ Future<void> main() async {
 
   // ✅ Init Firebase (required before onBackgroundMessage registration on some setups)
   try {
-    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform);
     debugPrint('✅ Firebase initialized successfully');
   } catch (e, st) {
     debugPrint('❌ Firebase.initializeApp() failed: $e\n$st');
@@ -106,12 +156,19 @@ Future<void> main() async {
   }
 
   final authToken = prefs.getString('authToken');
-  final activeRole =
-      (prefs.getString('activeRole') ?? '').toLowerCase();
+  final activeRole = AppRoles.normalize(prefs.getString('activeRole'));
+  final roles = AppRoles.decodeStoredRoles(prefs.getString('roles'));
+  final supportedRoles = AppRoles.supportedFrom(roles);
 
   final initialRoute = authToken == null
       ? '/login'
-      : (activeRole == 'teacher' ? '/teacher' : '/dashboard');
+      : AppRoles.isMobileSupported(activeRole)
+          ? AppRoles.dashboardRoute(activeRole)
+          : supportedRoles.length > 1
+              ? '/choose-role'
+              : AppRoles.dashboardRoute(
+                  supportedRoles.isNotEmpty ? supportedRoles.first : activeRole,
+                );
 
   runApp(StudentApp(initialRoute: initialRoute));
 }
@@ -128,8 +185,7 @@ Future<void> _persistAndSendToken({
   try {
     await prefs.setString('fcmToken', fcmToken);
 
-    final authToken =
-        prefs.getString('authToken') ?? prefs.getString('token');
+    final authToken = prefs.getString('authToken') ?? prefs.getString('token');
 
     if (authToken == null || authToken.trim().isEmpty) {
       debugPrint(
@@ -206,10 +262,148 @@ class StudentApp extends StatelessWidget {
         builder: (context, child) => child ?? const SizedBox.shrink(),
         routes: {
           '/login': (context) => const LoginScreen(),
+          '/choose-role': (context) => const RoleSelectionScreen(),
           '/dashboard': (context) => dashboard.DashboardScreen(),
 
           // Teacher
           '/teacher': (context) => const TeacherDashboard(),
+          '/coordinator': (context) => const CoordinatorDashboard(),
+          '/academic-coordinator': (context) => const CoordinatorDashboard(),
+          '/coordinator/attendance-summary': (context) =>
+              const CoordinatorAttendanceSummaryScreen(),
+          '/coordinator/academic-calendar': (context) =>
+              const CoordinatorAcademicCalendarScreen(),
+          '/coordinator/circulars': (context) =>
+              const CoordinatorCircularManagementScreen(),
+          '/coordinator/digital-diary': (context) =>
+              const CoordinatorDigitalDiaryMonitorScreen(),
+          '/coordinator/incharge-assignment': (context) =>
+              const CoordinatorInchargeAssignmentScreen(),
+          '/coordinator/subjects': (context) =>
+              const CoordinatorSubjectManagementScreen(),
+          '/coordinator/students': (context) =>
+              const CoordinatorStudentsViewScreen(),
+          '/coordinator/syllabus-approvals': (context) =>
+              const CoordinatorSyllabusApprovalScreen(),
+          '/coordinator/substitution-assignment': (context) =>
+              const CoordinatorSubstitutionAssignmentScreen(),
+          '/coordinator/substitutions': (context) =>
+              const CoordinatorSubstitutionsScreen(),
+          '/coordinator/timetable': (context) =>
+              const CoordinatorTimetableScreen(),
+          // Role dashboards (landing pages)
+          '/superadmin': (context) => const SuperadminDashboardScreen(),
+          '/accounts': (context) => const AccountsDashboardScreen(),
+          '/hr': (context) => const HrDashboardScreen(),
+          '/transport': (context) => const TransportDashboardScreen(),
+          '/examination': (context) => const ExaminationDashboardScreen(),
+
+          // Superadmin sub-pages
+          '/superadmin/school-settings': (context) =>
+              const SuperadminSchoolSettingsScreen(),
+          '/superadmin/user-management': (context) =>
+              const SuperadminUserManagementScreen(),
+          '/superadmin/school-reports': (context) =>
+              const SuperadminSchoolReportsScreen(),
+          '/superadmin/transactions': (context) =>
+              const SuperAdminTransactionsScreen(),
+          '/superadmin/permissions': (context) =>
+              const SuperadminPermissionsScreen(),
+          '/superadmin/academic-year': (context) =>
+              const SuperadminAcademicYearScreen(),
+          '/superadmin/classes-sections': (context) =>
+              const SuperadminClassesSectionsScreen(),
+          '/superadmin/user-tracking': (context) =>
+              const SuperadminUserTrackingScreen(),
+          '/superadmin/bank-accounts': (context) =>
+              const SuperadminBankAccountsScreen(),
+          '/superadmin/ai-settings': (context) =>
+              const SuperadminAiSettingsScreen(),
+
+          // Accounts sub-pages
+          '/accounts/collect-fee': (context) => const CollectFeeScreen(),
+          '/accounts/day-collection': (context) =>
+              const AccountsDayWiseReportScreen(),
+          '/accounts/fee-due': (context) =>
+              const AccountsStudentDueReportScreen(),
+          '/accounts/session-summary': (context) =>
+              buildAccountsFeatureScreen('sessionSummary'),
+          '/accounts/fee-head-collection': (context) =>
+              const AccountsFeeHeadCollectionReportScreen(),
+          '/accounts/bulk-concessions': (context) =>
+              buildAccountsFeatureScreen('bulkConcessions'),
+          '/accounts/cancelled-receipts': (context) =>
+              buildAccountsFeatureScreen('cancelledReceipts'),
+          '/accounts/concession-report': (context) =>
+              buildAccountsFeatureScreen('concessionReport'),
+          '/accounts/transport-fee': (context) =>
+              buildAccountsFeatureScreen('transportFee'),
+          '/accounts/opening-balances': (context) =>
+              buildAccountsFeatureScreen('openingBalances'),
+          '/accounts/fee-structure': (context) =>
+              buildAccountsFeatureScreen('feeStructure'),
+          '/accounts/student-fee-structure': (context) =>
+              buildAccountsFeatureScreen('studentFeeStructure'),
+          '/accounts/fee-headings': (context) =>
+              buildAccountsFeatureScreen('feeHeadings'),
+          '/accounts/fee-category': (context) =>
+              buildAccountsFeatureScreen('feeCategory'),
+          '/accounts/concessions': (context) =>
+              buildAccountsFeatureScreen('concessions'),
+          '/accounts/payment-setup': (context) =>
+              buildAccountsFeatureScreen('paymentSetup'),
+          '/accounts/messages': (context) =>
+              buildAccountsFeatureScreen('messages'),
+
+          // HR sub-pages
+          '/hr/employees': (context) => const HrEmployeeManagementScreen(),
+          '/hr/leave-attendance': (context) => const HrLeaveAttendanceScreen(),
+          '/hr/onboarding': (context) => const HrOnboardingScreen(),
+          '/hr/leave-requests': (context) => const HrLeaveRequestsScreen(),
+          '/hr/attendance-calendar': (context) =>
+              const HrAttendanceCalendarScreen(),
+          '/hr/departments': (context) => const HrDepartmentsScreen(),
+          '/hr/employee-accounts': (context) =>
+              const HrEmployeeAccountsScreen(),
+          '/hr/messages': (context) => const HrMessagesScreen(),
+
+          // Transport sub-pages
+          '/transport/routes': (context) => const TransportRoutesScreen(),
+          '/transport/pickup-tracking': (context) =>
+              const TransportPickupTrackingScreen(),
+          '/transport/vehicle-status': (context) =>
+              const TransportVehicleStatusScreen(),
+          '/transport/buses': (context) => const TransportBusesScreen(),
+          '/transport/student-assignments': (context) =>
+              const TransportStudentAssignmentsScreen(),
+          '/transport/staff': (context) => const TransportStaffScreen(),
+          '/transport/attendance': (context) =>
+              const TransportAttendanceScreen(),
+          '/transport/attendance-report': (context) =>
+              const TransportAttendanceReportScreen(),
+          '/transport/fee-overrides': (context) =>
+              const TransportFeeOverridesScreen(),
+
+          // Examination sub-pages
+          '/examination/schedule': (context) =>
+              const ExaminationScheduleScreen(),
+          '/examination/result-moderation': (context) =>
+              const ExaminationResultModerationScreen(),
+          '/examination/reports': (context) => const ExaminationReportsScreen(),
+          '/examination/exams': (context) =>
+              const ExaminationManageExamsScreen(),
+          '/examination/schemes': (context) => const ExaminationSchemesScreen(),
+          '/examination/marks-entry': (context) =>
+              const ExaminationMarksEntryScreen(),
+          '/examination/co-scholastic': (context) =>
+              const ExaminationCoScholasticScreen(),
+          '/examination/remarks': (context) => const ExaminationRemarksScreen(),
+          '/examination/promotion': (context) =>
+              const ExaminationPromotionScreen(),
+          '/examination/report-cards': (context) =>
+              const ExaminationReportCardsScreen(),
+          '/examination/final-result': (context) =>
+              const ExaminationFinalResultScreen(),
           '/teacher/attendance': (context) => const MarkAttendanceScreen(),
 
           // ✅ Teacher: approve/reject STUDENT leave requests
@@ -221,6 +415,7 @@ class StudentApp extends StatelessWidget {
               const TeacherMyLeaveRequestsScreen(),
 
           '/teacher/circulars': (context) => const TeacherCircularsScreen(),
+          '/view-circulars': (context) => const TeacherCircularsScreen(),
           '/teacher-timetable-display': (context) =>
               const TeacherTimetableDisplayScreen(),
           '/teacher/substitutions': (context) =>
@@ -228,7 +423,15 @@ class StudentApp extends StatelessWidget {
           '/teacher/substituted': (context) =>
               const TeacherSubstitutedListing(),
           '/teacher/diary': (context) => const TeacherDigitalDiaryScreen(),
+          '/teacher/digital-diary': (context) =>
+              const TeacherDigitalDiaryScreen(),
           '/teacher/messages': (context) => const TeacherMessagesScreen(),
+          '/teacher/marks-entry': (context) => const TeacherMarksEntryScreen(),
+          '/marks-entry': (context) => const TeacherMarksEntryScreen(),
+          '/teacher/lesson-plan': (context) => const TeacherLessonPlanScreen(),
+          '/lesson-plan': (context) => const TeacherLessonPlanScreen(),
+          '/employee-leave-request': (context) =>
+              const TeacherMyLeaveRequestsScreen(),
 
           // ✅ NEW: My Attendance Calendar (Teacher)
           '/my-attendance-calendar': (context) =>
@@ -301,13 +504,17 @@ class StudentAppBar extends StatelessWidget implements PreferredSizeWidget {
       : super(key: key);
 
   Future<void> handleLogout() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('authToken');
-    await prefs.remove('activeRole');
+    await ApiService.clearLocalSession();
+
+    if (!parentContext.mounted) return;
+
     ScaffoldMessenger.of(parentContext).showSnackBar(
       const SnackBar(content: Text('👋 Logged out successfully')),
     );
-    Navigator.of(parentContext).pushReplacementNamed('/login');
+    Navigator.of(parentContext).pushNamedAndRemoveUntil(
+      '/login',
+      (route) => false,
+    );
   }
 
   @override

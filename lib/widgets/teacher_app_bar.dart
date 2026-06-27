@@ -1,11 +1,14 @@
 // lib/widgets/teacher_app_bar.dart
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
+import '../services/api_service.dart';
+import 'role_switcher.dart';
 
 class TeacherAppBar extends StatelessWidget implements PreferredSizeWidget {
   final BuildContext? parentContext;
   final VoidCallback? onLogout;
   final String? teacherName;
+  final String roleLabel;
   final GlobalKey<ScaffoldState>? scaffoldKey;
 
   const TeacherAppBar({
@@ -13,15 +16,24 @@ class TeacherAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.parentContext,
     this.onLogout,
     this.teacherName,
+    this.roleLabel = 'Teacher',
     this.scaffoldKey,
   });
 
   Future<void> _defaultLogout(BuildContext ctx) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('authToken');
-    await prefs.remove('activeRole');
-    ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('👋 Logged out successfully')));
-    Navigator.of(ctx).pushReplacementNamed('/login');
+    await ApiService.clearLocalSession();
+
+    if (!ctx.mounted) return;
+
+    ScaffoldMessenger.of(ctx).clearSnackBars();
+    ScaffoldMessenger.of(ctx).showSnackBar(
+      const SnackBar(
+        content: Text('👋 Logged out successfully'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+
+    Navigator.of(ctx).pushNamedAndRemoveUntil('/login', (route) => false);
   }
 
   void _handleLogout(BuildContext ctx) {
@@ -93,7 +105,12 @@ class TeacherAppBar extends StatelessWidget implements PreferredSizeWidget {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 14, offset: Offset(0, 6))],
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 14,
+                offset: Offset(0, 6))
+          ],
         ),
       ),
       titleSpacing: 0,
@@ -115,8 +132,11 @@ class TeacherAppBar extends StatelessWidget implements PreferredSizeWidget {
             Padding(
               padding: const EdgeInsets.only(top: 2),
               child: Text(
-                'Welcome, $firstName',
-                style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w500),
+                '$roleLabel • Welcome, $firstName',
+                style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500),
               ),
             ),
         ],
@@ -129,8 +149,26 @@ class TeacherAppBar extends StatelessWidget implements PreferredSizeWidget {
         ),
       ),
       actions: [
+        FutureBuilder<List<String>>(
+          future: RoleSwitcher.loadSupportedRoles(),
+          builder: (context, snapshot) {
+            final roles = snapshot.data ?? const <String>[];
+            if (roles.length <= 1) return const SizedBox.shrink();
+
+            return IconButton(
+              icon: const Icon(
+                Icons.switch_account_rounded,
+                color: Colors.white,
+                size: 25,
+              ),
+              onPressed: () => RoleSwitcher.show(parentContext ?? context),
+              tooltip: 'Switch Role',
+            );
+          },
+        ),
         IconButton(
-          icon: const Icon(Icons.notifications_rounded, color: Colors.white, size: 26),
+          icon: const Icon(Icons.notifications_rounded,
+              color: Colors.white, size: 26),
           onPressed: () => _openEndDrawer(parentContext ?? context),
           tooltip: 'Notifications',
         ),

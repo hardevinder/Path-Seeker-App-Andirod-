@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../auth/role_manager.dart';
 import '../constants/constants.dart';
 import '../widgets/student_app_bar.dart';
 import '../widgets/student_drawer_menu.dart';
@@ -162,8 +163,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         prefs.getString('selectedStudentAdmissionNumber') ?? username;
     notifications = prefs.getStringList('notifications') ?? [];
 
-    final activeRole = prefs.getString('activeRole')?.toLowerCase() ?? '';
-    isTeacher = activeRole == 'teacher';
+    final activeRole = AppRoles.normalize(prefs.getString('activeRole'));
+    isTeacher = AppRoles.isStaff(activeRole);
 
     await _fetchAll();
 
@@ -275,7 +276,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _stringValue(json['blood_group']) ??
           _stringValue(json['bloodGroup']);
 
-      final photo = _stringValue(json['photo_url']) ?? _stringValue(json['photoUrl']);
+      final photo =
+          _stringValue(json['photo_url']) ?? _stringValue(json['photoUrl']);
 
       if (!mounted) return;
       setState(() {
@@ -356,8 +358,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             'id': map['id'],
             'name': _stringValue(map['name']) ?? 'Sibling',
             'admission_number': adm,
-            'class_text':
-                map['class_id'] != null ? "Class ID: ${map['class_id']}" : 'Sibling',
+            'class_text': map['class_id'] != null
+                ? "Class ID: ${map['class_id']}"
+                : 'Sibling',
             'route_name': _stringValue(route?['route_name']),
             'grand_total_due': _doubleValue(totals?['grandTotal']),
             'is_current': false,
@@ -401,7 +404,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final now = DateTime.now();
       final monthRows = rows.where((r) {
         final map = _asMap(r);
-        final d = DateTime.tryParse(map?['date']?.toString() ?? '') ?? DateTime(1970);
+        final d =
+            DateTime.tryParse(map?['date']?.toString() ?? '') ?? DateTime(1970);
         return d.month == now.month && d.year == now.year;
       }).toList();
 
@@ -455,7 +459,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         if (status == 'graded') graded++;
 
         final dueStr = sa?['dueDate'] ?? sa?['due_date'];
-        final due = dueStr != null ? DateTime.tryParse(dueStr.toString()) : null;
+        final due =
+            dueStr != null ? DateTime.tryParse(dueStr.toString()) : null;
         final isDone = ['submitted', 'graded'].contains(status);
 
         if (due != null && !isDone) {
@@ -470,8 +475,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       upcoming.sort((a, b) {
         final sa = _asMap(_firstStudentAssignment(a));
         final sb = _asMap(_firstStudentAssignment(b));
-        final da = DateTime.tryParse((sa?['dueDate'] ?? sa?['due_date'] ?? '').toString());
-        final db = DateTime.tryParse((sb?['dueDate'] ?? sb?['due_date'] ?? '').toString());
+        final da = DateTime.tryParse(
+            (sa?['dueDate'] ?? sa?['due_date'] ?? '').toString());
+        final db = DateTime.tryParse(
+            (sb?['dueDate'] ?? sb?['due_date'] ?? '').toString());
         return (da ?? DateTime(9999)).compareTo(db ?? DateTime(9999));
       });
 
@@ -514,14 +521,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final fees = _asList(json['feeDetails']);
       final totalDue = fees.fold<double>(0.0, (sum, f) {
         final map = _asMap(f) ?? <String, dynamic>{};
-        return sum + _doubleValue(map['finalAmountDue'] ?? map['final_amount_due']);
+        return sum +
+            _doubleValue(map['finalAmountDue'] ?? map['final_amount_due']);
       });
 
       final vanObj = _asMap(json['vanFee']) ?? <String, dynamic>{};
-      final vanCost = _doubleValue(vanObj['perHeadTotalDue'] ?? vanObj['transportCost']);
+      final vanCost =
+          _doubleValue(vanObj['perHeadTotalDue'] ?? vanObj['transportCost']);
       final vanRecv = _doubleValue(vanObj['totalVanFeeReceived']);
       final vanCon = _doubleValue(vanObj['totalVanFeeConcession']);
-      final vanDueNum = (vanCost - (vanRecv + vanCon)).clamp(0, double.infinity).toDouble();
+      final vanDueNum =
+          (vanCost - (vanRecv + vanCon)).clamp(0, double.infinity).toDouble();
 
       if (!mounted) return;
       setState(() {
@@ -534,7 +544,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _fetchDiarySummary(Map<String, String> headers) async {
     try {
       final latestRes = await http.get(
-        Uri.parse('$baseUrl/diaries/student/feed/list?page=1&pageSize=5&order=date:DESC'),
+        Uri.parse(
+            '$baseUrl/diaries/student/feed/list?page=1&pageSize=5&order=date:DESC'),
         headers: headers,
       );
       if (latestRes.statusCode != 200) return;
@@ -542,10 +553,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final latestJson = _asMap(jsonDecode(latestRes.body));
       final latestItems = _asList(latestJson?['data']);
       final latestPagination = _asMap(latestJson?['pagination']);
-      final total = int.tryParse((latestPagination?['total'] ?? latestItems.length).toString()) ?? latestItems.length;
+      final total = int.tryParse(
+              (latestPagination?['total'] ?? latestItems.length).toString()) ??
+          latestItems.length;
 
       final unackRes = await http.get(
-        Uri.parse('$baseUrl/diaries/student/feed/list?page=1&pageSize=1&order=date:DESC&onlyUnacknowledged=true'),
+        Uri.parse(
+            '$baseUrl/diaries/student/feed/list?page=1&pageSize=1&order=date:DESC&onlyUnacknowledged=true'),
         headers: headers,
       );
 
@@ -566,7 +580,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _fetchCirculars(Map<String, String> headers) async {
     try {
-      final res = await http.get(Uri.parse('$baseUrl/circulars'), headers: headers);
+      final res =
+          await http.get(Uri.parse('$baseUrl/circulars'), headers: headers);
       if (res.statusCode != 200) return;
 
       final decoded = jsonDecode(res.body);
@@ -582,8 +597,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       filtered.sort((a, b) {
         final ma = _asMap(a);
         final mb = _asMap(b);
-        final da = DateTime.tryParse(ma?['createdAt']?.toString() ?? '') ?? DateTime(1970);
-        final db = DateTime.tryParse(mb?['createdAt']?.toString() ?? '') ?? DateTime(1970);
+        final da = DateTime.tryParse(ma?['createdAt']?.toString() ?? '') ??
+            DateTime(1970);
+        final db = DateTime.tryParse(mb?['createdAt']?.toString() ?? '') ??
+            DateTime(1970);
         return db.compareTo(da);
       });
 
@@ -591,7 +608,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       setState(() {
         recentCirculars = filtered
             .take(5)
-            .map((e) => Map<String, dynamic>.from(_asMap(e) ?? <String, dynamic>{}))
+            .map((e) =>
+                Map<String, dynamic>.from(_asMap(e) ?? <String, dynamic>{}))
             .toList();
       });
     } catch (_) {}
@@ -648,7 +666,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               _stringValue(map['latestMessage']) ??
               _stringValue(map['lastMessage']) ??
               _stringValue(map['body']);
-          final subject = _stringValue(thread?['subject']) ?? _stringValue(map['subject']);
+          final subject =
+              _stringValue(thread?['subject']) ?? _stringValue(map['subject']);
 
           preview = body ?? subject ?? '';
         }
@@ -667,7 +686,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _fetchTodayTimetable(Map<String, String> headers) async {
     try {
-      final pRes = await http.get(Uri.parse('$baseUrl/periods'), headers: headers);
+      final pRes =
+          await http.get(Uri.parse('$baseUrl/periods'), headers: headers);
       final tRes = await http.get(
         Uri.parse('$baseUrl/period-class-teacher-subject/student/timetable'),
         headers: headers,
@@ -676,7 +696,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       final periods = _asList(jsonDecode(pRes.body));
       final ttbRaw = jsonDecode(tRes.body);
-      final timetable = ttbRaw is List ? ttbRaw : _asList(_asMap(ttbRaw)?['timetable']);
+      final timetable =
+          ttbRaw is List ? ttbRaw : _asList(_asMap(ttbRaw)?['timetable']);
 
       const days = [
         'Sunday',
@@ -711,7 +732,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
         items.add({
           'period': pMap['period_name'] ?? pMap['name'],
-          'time': (startTime != null && endTime != null) ? '$startTime–$endTime' : '',
+          'time': (startTime != null && endTime != null)
+              ? '$startTime–$endTime'
+              : '',
           'subject': subject?['name'] ?? row['subjectId'] ?? '—',
           'teacher': teacher?['name'] ?? '—',
           'start_time': startTime,
@@ -719,7 +742,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         });
       }
 
-      items.sort((a, b) => _minutes(a['start_time']).compareTo(_minutes(b['start_time'])));
+      items.sort((a, b) =>
+          _minutes(a['start_time']).compareTo(_minutes(b['start_time'])));
 
       if (!mounted) return;
       setState(() => todayPeriods = items);
@@ -1050,14 +1074,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
           clipBehavior: Clip.none,
           children: [
             const Center(
-              child: Icon(Icons.notifications_none_rounded, color: Colors.white),
+              child:
+                  Icon(Icons.notifications_none_rounded, color: Colors.white),
             ),
             if (notifications.isNotEmpty)
               Positioned(
                 right: -4,
                 top: -5,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                   decoration: BoxDecoration(
                     color: kRed,
                     borderRadius: BorderRadius.circular(999),
@@ -1233,7 +1259,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                       if (isActive)
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 3),
                           decoration: BoxDecoration(
                             color: kAccent,
                             borderRadius: BorderRadius.circular(999),
@@ -1258,7 +1285,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(height: 5),
                   Text(
-                    due > 0 ? 'Due: ${currencyFormat.format(due)}' : 'Tap to switch',
+                    due > 0
+                        ? 'Due: ${currencyFormat.format(due)}'
+                        : 'Tap to switch',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -1321,8 +1350,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // -------------------- Student Profile --------------------
   Widget _studentProfileCard() {
-    final hasAny =
-        (admissionNumber?.isNotEmpty ?? false) ||
+    final hasAny = (admissionNumber?.isNotEmpty ?? false) ||
         (sessionName?.isNotEmpty ?? false) ||
         (dateOfBirth?.isNotEmpty ?? false) ||
         (bloodGroup?.isNotEmpty ?? false) ||
@@ -1362,8 +1390,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 _infoPill('Session', sessionName!),
               if ((dobPretty ?? '').trim().isNotEmpty)
                 _infoPill('DOB', dobPretty!),
-              if ((ageText ?? '').trim().isNotEmpty)
-                _infoPill('Age', ageText!),
+              if ((ageText ?? '').trim().isNotEmpty) _infoPill('Age', ageText!),
               if ((bloodGroup ?? '').trim().isNotEmpty)
                 _infoPill('Blood', bloodGroup!.trim()),
               if ((routeName ?? '').trim().isNotEmpty)
@@ -1376,9 +1403,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ],
           ),
           const SizedBox(height: 14),
-          _profileLine(Icons.person_outline_rounded, 'Father', _join2(fatherName, fatherPhone)),
+          _profileLine(Icons.person_outline_rounded, 'Father',
+              _join2(fatherName, fatherPhone)),
           const SizedBox(height: 10),
-          _profileLine(Icons.person_2_outlined, 'Mother', _join2(motherName, motherPhone)),
+          _profileLine(Icons.person_2_outlined, 'Mother',
+              _join2(motherName, motherPhone)),
           if ((address ?? '').trim().isNotEmpty) ...[
             const SizedBox(height: 10),
             _profileLine(Icons.home_outlined, 'Address', address!.trim()),
@@ -1458,7 +1487,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _DashStat(
         title: isTeacher ? 'Attendance' : 'Present',
         value: isTeacher ? 'Calendar' : '$present/$totalDays',
-        subtitle: isTeacher ? 'Open attendance' : '${presencePct()}% this month',
+        subtitle:
+            isTeacher ? 'Open attendance' : '${presencePct()}% this month',
         icon: Icons.calendar_month_rounded,
         color: kBlue,
         route: isTeacher ? '/my-attendance-calendar' : '/attendance',
@@ -1556,7 +1586,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   child: Icon(stat.icon, color: stat.color, size: 20),
                 ),
                 const Spacer(),
-                Icon(Icons.arrow_forward_ios_rounded, size: 13, color: kMuted.withOpacity(0.65)),
+                Icon(Icons.arrow_forward_ios_rounded,
+                    size: 13, color: kMuted.withOpacity(0.65)),
               ],
             ),
             const Spacer(),
@@ -1599,7 +1630,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final slides = [
       _highlightSlide(
         title: isTeacher ? 'My Attendance' : 'Attendance',
-        subtitle: isTeacher ? 'Check your calendar view' : '$presencePct% attendance this month',
+        subtitle: isTeacher
+            ? 'Check your calendar view'
+            : '$presencePct% attendance this month',
         trailing: isTeacher ? 'Open Calendar' : '$present / $totalDays days',
         icon: Icons.calendar_today_rounded,
         colors: const [Color(0xFFEFF6FF), Color(0xFFDBEAFE)],
@@ -1632,7 +1665,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         subtitle: latestMessagePreview.trim().isNotEmpty
             ? latestMessagePreview
             : 'Fee reminders & teacher replies',
-        trailing: messageUnread > 0 ? '$messageUnread unread' : '$messageTotal total',
+        trailing:
+            messageUnread > 0 ? '$messageUnread unread' : '$messageTotal total',
         icon: Icons.mark_chat_unread_rounded,
         colors: const [Color(0xFFEFF6FF), Color(0xFFEDE9FE)],
         iconColor: messageUnread > 0 ? kRed : kBlue,
@@ -1748,7 +1782,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(height: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.70),
                       borderRadius: BorderRadius.circular(999),
@@ -1804,7 +1839,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
                 const SizedBox(height: 10),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                   decoration: BoxDecoration(
                     color: kAccent.withOpacity(0.08),
                     borderRadius: BorderRadius.circular(999),
@@ -1831,7 +1867,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               gradient: const LinearGradient(colors: [kAccent, kAccent2]),
               borderRadius: BorderRadius.circular(22),
             ),
-            child: const Icon(Icons.today_rounded, color: Colors.white, size: 34),
+            child:
+                const Icon(Icons.today_rounded, color: Colors.white, size: 34),
           ),
         ],
       ),
@@ -1839,7 +1876,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   String _nextPeriodText() {
-    if (todayPeriods.isEmpty) return isTeacher ? 'No timetable for today' : 'No periods today';
+    if (todayPeriods.isEmpty)
+      return isTeacher ? 'No timetable for today' : 'No periods today';
 
     final now = DateTime.now();
     for (final period in todayPeriods) {
@@ -2019,7 +2057,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    color: isHighlighted ? Colors.white.withOpacity(0.18) : null,
+                    color:
+                        isHighlighted ? Colors.white.withOpacity(0.18) : null,
                     gradient: isHighlighted
                         ? null
                         : LinearGradient(
@@ -2044,7 +2083,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     right: -7,
                     top: -7,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 3),
                       decoration: BoxDecoration(
                         color: isHighlighted
                             ? (messageUnread > 0 ? kRed : Colors.white)
@@ -2112,7 +2152,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _sectionTitle(
             icon: Icons.assignment_outlined,
             title: 'Upcoming Assignments',
-            subtitle: assignNext3.isEmpty ? 'No pending work' : 'Nearest due dates first',
+            subtitle: assignNext3.isEmpty
+                ? 'No pending work'
+                : 'Nearest due dates first',
             onTap: () => Navigator.pushNamed(context, '/assignments'),
             actionText: 'Open',
           ),
@@ -2138,7 +2180,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       children: assignNext3.map((assignment) {
         final due = assignment['due']?.toString();
         final dueDate = due != null ? DateTime.tryParse(due) : null;
-        final dueText = dueDate != null ? DateFormat('d MMM yyyy').format(dueDate) : '—';
+        final dueText =
+            dueDate != null ? DateFormat('d MMM yyyy').format(dueDate) : '—';
 
         return Container(
           margin: const EdgeInsets.only(bottom: 10),
@@ -2203,7 +2246,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _sectionTitle(
             icon: Icons.schedule_outlined,
             title: "Today's Timetable",
-            subtitle: todayPeriods.isEmpty ? 'No classes scheduled' : '${todayPeriods.length} periods today',
+            subtitle: todayPeriods.isEmpty
+                ? 'No classes scheduled'
+                : '${todayPeriods.length} periods today',
             onTap: () => Navigator.pushNamed(context, '/timetable'),
             actionText: 'Open',
           ),
@@ -2224,7 +2269,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   margin: const EdgeInsets.only(bottom: 10),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: current ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFF),
+                    color: current
+                        ? const Color(0xFFF0FDF4)
+                        : const Color(0xFFF8FAFF),
                     borderRadius: BorderRadius.circular(18),
                     border: Border.all(
                       color: current ? kGreen.withOpacity(0.35) : kSoftBorder,
@@ -2236,11 +2283,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: current ? kGreen.withOpacity(0.12) : kAccent.withOpacity(0.10),
+                          color: current
+                              ? kGreen.withOpacity(0.12)
+                              : kAccent.withOpacity(0.10),
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: Icon(
-                          current ? Icons.play_circle_outline_rounded : Icons.book_outlined,
+                          current
+                              ? Icons.play_circle_outline_rounded
+                              : Icons.book_outlined,
                           color: current ? kGreen : kAccent,
                         ),
                       ),
@@ -2271,7 +2322,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               (period['teacher'] ?? '—').toString(),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: kMuted, fontSize: 12),
+                              style:
+                                  const TextStyle(color: kMuted, fontSize: 12),
                             ),
                           ],
                         ),
@@ -2297,7 +2349,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 onPressed: () => Navigator.pushNamed(context, '/timetable'),
                 child: Text(
                   '+${todayPeriods.length - 5} more periods',
-                  style: const TextStyle(color: kAccent, fontWeight: FontWeight.w900),
+                  style: const TextStyle(
+                      color: kAccent, fontWeight: FontWeight.w900),
                 ),
               ),
             ),
@@ -2342,7 +2395,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _sectionTitle(
             icon: Icons.campaign_outlined,
             title: 'Recent Circulars',
-            subtitle: recentCirculars.isEmpty ? 'School notices' : 'Latest school notices',
+            subtitle: recentCirculars.isEmpty
+                ? 'School notices'
+                : 'Latest school notices',
             onTap: () => Navigator.pushNamed(context, '/circulars'),
             actionText: 'See all',
           ),
@@ -2359,7 +2414,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Column(
               children: recentCirculars.map((circular) {
                 final title = circular['title'] ?? 'Untitled';
-                final created = DateTime.tryParse(circular['createdAt']?.toString() ?? '') ?? DateTime.now();
+                final created = DateTime.tryParse(
+                        circular['createdAt']?.toString() ?? '') ??
+                    DateTime.now();
 
                 return InkWell(
                   onTap: () => Navigator.pushNamed(context, '/circulars'),
@@ -2382,7 +2439,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             color: kGreen.withOpacity(0.11),
                             borderRadius: BorderRadius.circular(15),
                           ),
-                          child: const Icon(Icons.campaign_rounded, color: kGreen),
+                          child:
+                              const Icon(Icons.campaign_rounded, color: kGreen),
                         ),
                         const SizedBox(width: 11),
                         Expanded(
@@ -2402,7 +2460,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               const SizedBox(height: 4),
                               Text(
                                 DateFormat('d MMM yyyy').format(created),
-                                style: const TextStyle(color: kMuted, fontSize: 12),
+                                style: const TextStyle(
+                                    color: kMuted, fontSize: 12),
                               ),
                             ],
                           ),
@@ -2520,7 +2579,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final text = input.trim();
     if (text.isEmpty) return 'S';
 
-    final parts = text.split(RegExp(r'\s+')).where((p) => p.trim().isNotEmpty).toList();
+    final parts =
+        text.split(RegExp(r'\s+')).where((p) => p.trim().isNotEmpty).toList();
     if (parts.isEmpty) return 'S';
     if (parts.length == 1) return parts[0].substring(0, 1).toUpperCase();
 
@@ -2573,7 +2633,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     final now = DateTime.now();
     int years = now.year - dob.year;
-    final hadBirthdayThisYear = now.month > dob.month || (now.month == dob.month && now.day >= dob.day);
+    final hadBirthdayThisYear =
+        now.month > dob.month || (now.month == dob.month && now.day >= dob.day);
     if (!hadBirthdayThisYear) years -= 1;
     if (years < 0) return null;
 
@@ -2659,7 +2720,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         const Spacer(),
                         IconButton(
                           tooltip: 'Clear all',
-                          icon: const Icon(Icons.delete_outline_rounded, color: kMuted),
+                          icon: const Icon(Icons.delete_outline_rounded,
+                              color: kMuted),
                           onPressed: () async {
                             final prefs = await SharedPreferences.getInstance();
                             await prefs.remove('notifications');
@@ -2682,7 +2744,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         child: ListView.separated(
                           shrinkWrap: true,
                           itemCount: notifications.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 8),
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 8),
                           itemBuilder: (_, index) {
                             return Container(
                               padding: const EdgeInsets.all(12),
@@ -2700,12 +2763,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                       color: kAccent.withOpacity(0.10),
                                       borderRadius: BorderRadius.circular(15),
                                     ),
-                                    child: const Icon(Icons.info_outline_rounded, color: kAccent),
+                                    child: const Icon(
+                                        Icons.info_outline_rounded,
+                                        color: kAccent),
                                   ),
                                   const SizedBox(width: 10),
                                   Expanded(
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Text(
                                           notifications[index],
@@ -2718,7 +2784,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         const SizedBox(height: 3),
                                         const Text(
                                           'Just now',
-                                          style: TextStyle(color: kMuted, fontSize: 11),
+                                          style: TextStyle(
+                                              color: kMuted, fontSize: 11),
                                         ),
                                       ],
                                     ),

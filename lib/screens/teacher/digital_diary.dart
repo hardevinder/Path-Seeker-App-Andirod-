@@ -66,7 +66,9 @@ Future<RoleFlags> getRoleFlags() async {
     isAdmin: lc.contains('admin'),
     isSuperadmin: lc.contains('superadmin'),
     isHR: lc.contains('hr'),
-    isCoordinator: lc.contains('academic_coordinator'),
+    isCoordinator: lc.contains('academic_coordinator') ||
+        lc.contains('coordinator') ||
+        lc.contains('academic coordinator'),
     isTeacher: lc.contains('teacher'),
     isStudent: lc.contains('student'),
   );
@@ -110,11 +112,14 @@ Future<Response> diaryRequest({
       if (m == 'get') {
         res = await dio.get(url, queryParameters: params, options: opt);
       } else if (m == 'post') {
-        res = await dio.post(url, data: data, queryParameters: params, options: opt);
+        res = await dio.post(url,
+            data: data, queryParameters: params, options: opt);
       } else if (m == 'put') {
-        res = await dio.put(url, data: data, queryParameters: params, options: opt);
+        res = await dio.put(url,
+            data: data, queryParameters: params, options: opt);
       } else if (m == 'delete') {
-        res = await dio.delete(url, data: data, queryParameters: params, options: opt);
+        res = await dio.delete(url,
+            data: data, queryParameters: params, options: opt);
       } else {
         throw Exception('Unsupported method $method');
       }
@@ -134,9 +139,11 @@ Future<Response> diaryRequest({
 
 Future<Response> diaryGet(String s, [Map<String, dynamic>? p]) =>
     diaryRequest(method: 'get', suffix: s, params: p);
-Future<Response> diaryPost(String s, [dynamic d, Map<String, String> h = const {}]) =>
+Future<Response> diaryPost(String s,
+        [dynamic d, Map<String, String> h = const {}]) =>
     diaryRequest(method: 'post', suffix: s, data: d, headers: h);
-Future<Response> diaryPut(String s, [dynamic d, Map<String, String> h = const {}]) =>
+Future<Response> diaryPut(String s,
+        [dynamic d, Map<String, String> h = const {}]) =>
     diaryRequest(method: 'put', suffix: s, data: d, headers: h);
 Future<Response> diaryDelete(String s, [Map<String, dynamic>? p]) =>
     diaryRequest(method: 'delete', suffix: s, params: p);
@@ -202,7 +209,9 @@ class DiaryDownloadEntry {
     final student = m['student'];
     return DiaryDownloadEntry(
       id: m['id'] is int ? m['id'] : int.tryParse('${m['id']}') ?? 0,
-      studentId: m['studentId'] is int ? m['studentId'] : int.tryParse('${m['studentId']}'),
+      studentId: m['studentId'] is int
+          ? m['studentId']
+          : int.tryParse('${m['studentId']}'),
       admissionNumber: safeStr(
         m['admissionNumber'] ??
             m['admission_number'] ??
@@ -217,7 +226,6 @@ class DiaryDownloadEntry {
     );
   }
 }
-
 
 class DiaryAcknowledgementEntry {
   final int id;
@@ -242,7 +250,9 @@ class DiaryAcknowledgementEntry {
     final student = m['student'];
     return DiaryAcknowledgementEntry(
       id: m['id'] is int ? m['id'] : int.tryParse('${m['id']}') ?? 0,
-      studentId: m['studentId'] is int ? m['studentId'] : int.tryParse('${m['studentId']}'),
+      studentId: m['studentId'] is int
+          ? m['studentId']
+          : int.tryParse('${m['studentId']}'),
       admissionNumber: safeStr(
         m['admissionNumber'] ??
             m['admission_number'] ??
@@ -307,7 +317,8 @@ class Diary {
       classObj: m['class'] ?? m['Class'],
       sectionObj: m['section'] ?? m['Section'],
       subject: m['subject'],
-      attachments: (m['attachments'] is List) ? List.from(m['attachments']) : [],
+      attachments:
+          (m['attachments'] is List) ? List.from(m['attachments']) : [],
       targets: (m['targets'] is List) ? List.from(m['targets']) : [],
       acknowledgements: (m['acknowledgements'] is List)
           ? List.from(m['acknowledgements'])
@@ -331,7 +342,6 @@ class Diary {
     );
   }
 }
-
 
 class AcknowledgementSummary {
   final String key;
@@ -386,12 +396,14 @@ List<AcknowledgementSummary> summarizeAcknowledgements(
   }).toList();
 
   summaries.sort(
-    (a, b) => safeStr(b.latestAcknowledgedAt).compareTo(safeStr(a.latestAcknowledgedAt)),
+    (a, b) => safeStr(b.latestAcknowledgedAt)
+        .compareTo(safeStr(a.latestAcknowledgedAt)),
   );
   return summaries;
 }
 
-Future<List<DiaryAcknowledgementEntry>> fetchDiaryAcknowledgements(int diaryId) async {
+Future<List<DiaryAcknowledgementEntry>> fetchDiaryAcknowledgements(
+    int diaryId) async {
   try {
     final res = await diaryGet('/$diaryId/acknowledgements');
     final raw = res.data;
@@ -414,7 +426,8 @@ Future<List<DiaryAcknowledgementEntry>> fetchDiaryAcknowledgements(int diaryId) 
   return [];
 }
 
-Future<void> showDiaryAcknowledgementsSheet(BuildContext context, Diary seedDiary) async {
+Future<void> showDiaryAcknowledgementsSheet(
+    BuildContext context, Diary seedDiary) async {
   await showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -454,13 +467,15 @@ Future<void> showDiaryAcknowledgementsSheet(BuildContext context, Diary seedDiar
                           ),
                         ),
                         const SizedBox(height: 18),
-                        const Icon(Icons.error_outline_rounded, size: 42, color: Colors.redAccent),
+                        const Icon(Icons.error_outline_rounded,
+                            size: 42, color: Colors.redAccent),
                         const SizedBox(height: 10),
                         Text(
                           'Unable to load acknowledgements',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
                         ),
                         const SizedBox(height: 6),
                         Text(
@@ -473,7 +488,8 @@ Future<void> showDiaryAcknowledgementsSheet(BuildContext context, Diary seedDiar
                   );
                 }
 
-                final summary = summarizeAcknowledgements(snapshot.data ?? const []);
+                final summary =
+                    summarizeAcknowledgements(snapshot.data ?? const []);
 
                 return Column(
                   children: [
@@ -497,13 +513,18 @@ Future<void> showDiaryAcknowledgementsSheet(BuildContext context, Diary seedDiar
                               children: [
                                 Text(
                                   'Acknowledgements',
-                                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleLarge
+                                      ?.copyWith(
                                         fontWeight: FontWeight.w800,
                                       ),
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  seedDiary.title.isEmpty ? 'Diary #${seedDiary.id}' : seedDiary.title,
+                                  seedDiary.title.isEmpty
+                                      ? 'Diary #${seedDiary.id}'
+                                      : seedDiary.title,
                                   style: const TextStyle(color: Colors.black54),
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
@@ -512,7 +533,8 @@ Future<void> showDiaryAcknowledgementsSheet(BuildContext context, Diary seedDiar
                             ),
                           ),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
                             decoration: BoxDecoration(
                               color: Colors.green.shade50,
                               borderRadius: BorderRadius.circular(14),
@@ -544,14 +566,18 @@ Future<void> showDiaryAcknowledgementsSheet(BuildContext context, Diary seedDiar
                       child: summary.isEmpty
                           ? ListView(
                               controller: scrollController,
-                              padding: const EdgeInsets.fromLTRB(20, 30, 20, 30),
+                              padding:
+                                  const EdgeInsets.fromLTRB(20, 30, 20, 30),
                               children: const [
-                                Icon(Icons.check_circle_outline_rounded, size: 56, color: Colors.blueGrey),
+                                Icon(Icons.check_circle_outline_rounded,
+                                    size: 56, color: Colors.blueGrey),
                                 SizedBox(height: 12),
                                 Center(
                                   child: Text(
                                     'No acknowledgements yet.',
-                                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                                    style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w700),
                                   ),
                                 ),
                                 SizedBox(height: 6),
@@ -568,7 +594,8 @@ Future<void> showDiaryAcknowledgementsSheet(BuildContext context, Diary seedDiar
                               controller: scrollController,
                               padding: const EdgeInsets.fromLTRB(20, 6, 20, 24),
                               itemCount: summary.length,
-                              separatorBuilder: (_, __) => const SizedBox(height: 10),
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 10),
                               itemBuilder: (context, index) {
                                 final item = summary[index];
                                 final displayName = item.studentName.isNotEmpty
@@ -577,8 +604,10 @@ Future<void> showDiaryAcknowledgementsSheet(BuildContext context, Diary seedDiar
                                         ? item.admissionNumber
                                         : 'Student');
                                 final details = <String>[
-                                  if (item.admissionNumber.isNotEmpty) 'Adm: ${item.admissionNumber}',
-                                  if (item.rollNumber.isNotEmpty) 'Roll: ${item.rollNumber}',
+                                  if (item.admissionNumber.isNotEmpty)
+                                    'Adm: ${item.admissionNumber}',
+                                  if (item.rollNumber.isNotEmpty)
+                                    'Roll: ${item.rollNumber}',
                                 ].join(' • ');
 
                                 return Container(
@@ -586,17 +615,22 @@ Future<void> showDiaryAcknowledgementsSheet(BuildContext context, Diary seedDiar
                                   decoration: BoxDecoration(
                                     color: Colors.grey.shade50,
                                     borderRadius: BorderRadius.circular(16),
-                                    border: Border.all(color: Colors.grey.shade200),
+                                    border:
+                                        Border.all(color: Colors.grey.shade200),
                                   ),
                                   child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       CircleAvatar(
                                         radius: 22,
                                         backgroundColor: Colors.green.shade100,
                                         child: Text(
                                           displayName.isNotEmpty
-                                              ? displayName.trim().substring(0, 1).toUpperCase()
+                                              ? displayName
+                                                  .trim()
+                                                  .substring(0, 1)
+                                                  .toUpperCase()
                                               : 'S',
                                           style: TextStyle(
                                             color: Colors.green.shade900,
@@ -607,7 +641,8 @@ Future<void> showDiaryAcknowledgementsSheet(BuildContext context, Diary seedDiar
                                       const SizedBox(width: 12),
                                       Expanded(
                                         child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Text(
                                               displayName,
@@ -620,7 +655,8 @@ Future<void> showDiaryAcknowledgementsSheet(BuildContext context, Diary seedDiar
                                               const SizedBox(height: 3),
                                               Text(
                                                 details,
-                                                style: const TextStyle(color: Colors.black54),
+                                                style: const TextStyle(
+                                                    color: Colors.black54),
                                               ),
                                             ],
                                             const SizedBox(height: 6),
@@ -647,11 +683,14 @@ Future<void> showDiaryAcknowledgementsSheet(BuildContext context, Diary seedDiar
                                       ),
                                       const SizedBox(width: 8),
                                       Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 10, vertical: 8),
                                         decoration: BoxDecoration(
                                           color: Colors.white,
-                                          borderRadius: BorderRadius.circular(12),
-                                          border: Border.all(color: Colors.green.shade100),
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                          border: Border.all(
+                                              color: Colors.green.shade100),
                                         ),
                                         child: Column(
                                           children: [
@@ -664,8 +703,12 @@ Future<void> showDiaryAcknowledgementsSheet(BuildContext context, Diary seedDiar
                                             ),
                                             const SizedBox(height: 2),
                                             Text(
-                                              item.count == 1 ? 'time' : 'times',
-                                              style: const TextStyle(fontSize: 11, color: Colors.black54),
+                                              item.count == 1
+                                                  ? 'time'
+                                                  : 'times',
+                                              style: const TextStyle(
+                                                  fontSize: 11,
+                                                  color: Colors.black54),
                                             ),
                                           ],
                                         ),
@@ -717,7 +760,8 @@ List<DownloadSummary> summarizeDownloads(List<DiaryDownloadEntry> downloads) {
 
   final summaries = grouped.entries.map((entry) {
     final items = List<DiaryDownloadEntry>.from(entry.value);
-    items.sort((a, b) => safeStr(b.downloadedAt).compareTo(safeStr(a.downloadedAt)));
+    items.sort(
+        (a, b) => safeStr(b.downloadedAt).compareTo(safeStr(a.downloadedAt)));
     final latest = items.first;
     return DownloadSummary(
       key: entry.key,
@@ -729,7 +773,8 @@ List<DownloadSummary> summarizeDownloads(List<DiaryDownloadEntry> downloads) {
     );
   }).toList();
 
-  summaries.sort((a, b) => safeStr(b.latestDownloadedAt).compareTo(safeStr(a.latestDownloadedAt)));
+  summaries.sort((a, b) =>
+      safeStr(b.latestDownloadedAt).compareTo(safeStr(a.latestDownloadedAt)));
   return summaries;
 }
 
@@ -742,7 +787,8 @@ Future<Diary> fetchDiaryDetailsForDownloads(int diaryId) async {
   throw Exception('Invalid diary response');
 }
 
-Future<void> showDiaryDownloadsSheet(BuildContext context, Diary seedDiary) async {
+Future<void> showDiaryDownloadsSheet(
+    BuildContext context, Diary seedDiary) async {
   await showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -782,13 +828,15 @@ Future<void> showDiaryDownloadsSheet(BuildContext context, Diary seedDiary) asyn
                           ),
                         ),
                         const SizedBox(height: 18),
-                        const Icon(Icons.error_outline_rounded, size: 42, color: Colors.redAccent),
+                        const Icon(Icons.error_outline_rounded,
+                            size: 42, color: Colors.redAccent),
                         const SizedBox(height: 10),
                         Text(
                           'Unable to load download history',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
                         ),
                         const SizedBox(height: 6),
                         Text(
@@ -826,13 +874,18 @@ Future<void> showDiaryDownloadsSheet(BuildContext context, Diary seedDiary) asyn
                               children: [
                                 Text(
                                   'Download History',
-                                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleLarge
+                                      ?.copyWith(
                                         fontWeight: FontWeight.w800,
                                       ),
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  diary.title.isEmpty ? 'Diary #${diary.id}' : diary.title,
+                                  diary.title.isEmpty
+                                      ? 'Diary #${diary.id}'
+                                      : diary.title,
                                   style: const TextStyle(color: Colors.black54),
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
@@ -841,7 +894,8 @@ Future<void> showDiaryDownloadsSheet(BuildContext context, Diary seedDiary) asyn
                             ),
                           ),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
                             decoration: BoxDecoration(
                               color: Colors.indigo.shade50,
                               borderRadius: BorderRadius.circular(14),
@@ -873,14 +927,18 @@ Future<void> showDiaryDownloadsSheet(BuildContext context, Diary seedDiary) asyn
                       child: summary.isEmpty
                           ? ListView(
                               controller: scrollController,
-                              padding: const EdgeInsets.fromLTRB(20, 30, 20, 30),
+                              padding:
+                                  const EdgeInsets.fromLTRB(20, 30, 20, 30),
                               children: const [
-                                Icon(Icons.cloud_download_outlined, size: 56, color: Colors.blueGrey),
+                                Icon(Icons.cloud_download_outlined,
+                                    size: 56, color: Colors.blueGrey),
                                 SizedBox(height: 12),
                                 Center(
                                   child: Text(
                                     'No download history yet.',
-                                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                                    style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w700),
                                   ),
                                 ),
                                 SizedBox(height: 6),
@@ -897,7 +955,8 @@ Future<void> showDiaryDownloadsSheet(BuildContext context, Diary seedDiary) asyn
                               controller: scrollController,
                               padding: const EdgeInsets.fromLTRB(20, 6, 20, 24),
                               itemCount: summary.length,
-                              separatorBuilder: (_, __) => const SizedBox(height: 10),
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 10),
                               itemBuilder: (context, index) {
                                 final item = summary[index];
                                 final displayName = item.studentName.isNotEmpty
@@ -914,17 +973,22 @@ Future<void> showDiaryDownloadsSheet(BuildContext context, Diary seedDiary) asyn
                                   decoration: BoxDecoration(
                                     color: Colors.grey.shade50,
                                     borderRadius: BorderRadius.circular(16),
-                                    border: Border.all(color: Colors.grey.shade200),
+                                    border:
+                                        Border.all(color: Colors.grey.shade200),
                                   ),
                                   child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       CircleAvatar(
                                         radius: 22,
                                         backgroundColor: Colors.indigo.shade100,
                                         child: Text(
                                           displayName.isNotEmpty
-                                              ? displayName.trim().substring(0, 1).toUpperCase()
+                                              ? displayName
+                                                  .trim()
+                                                  .substring(0, 1)
+                                                  .toUpperCase()
                                               : 'S',
                                           style: TextStyle(
                                             color: Colors.indigo.shade900,
@@ -935,7 +999,8 @@ Future<void> showDiaryDownloadsSheet(BuildContext context, Diary seedDiary) asyn
                                       const SizedBox(width: 12),
                                       Expanded(
                                         child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Text(
                                               displayName,
@@ -947,7 +1012,8 @@ Future<void> showDiaryDownloadsSheet(BuildContext context, Diary seedDiary) asyn
                                             const SizedBox(height: 3),
                                             Text(
                                               sub,
-                                              style: const TextStyle(color: Colors.black54),
+                                              style: const TextStyle(
+                                                  color: Colors.black54),
                                             ),
                                             const SizedBox(height: 6),
                                             Text(
@@ -962,11 +1028,14 @@ Future<void> showDiaryDownloadsSheet(BuildContext context, Diary seedDiary) asyn
                                       ),
                                       const SizedBox(width: 8),
                                       Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 10, vertical: 8),
                                         decoration: BoxDecoration(
                                           color: Colors.white,
-                                          borderRadius: BorderRadius.circular(12),
-                                          border: Border.all(color: Colors.indigo.shade100),
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                          border: Border.all(
+                                              color: Colors.indigo.shade100),
                                         ),
                                         child: Column(
                                           children: [
@@ -979,8 +1048,12 @@ Future<void> showDiaryDownloadsSheet(BuildContext context, Diary seedDiary) asyn
                                             ),
                                             const SizedBox(height: 2),
                                             Text(
-                                              item.count == 1 ? 'time' : 'times',
-                                              style: const TextStyle(fontSize: 11, color: Colors.black54),
+                                              item.count == 1
+                                                  ? 'time'
+                                                  : 'times',
+                                              style: const TextStyle(
+                                                  fontSize: 11,
+                                                  color: Colors.black54),
                                             ),
                                           ],
                                         ),
@@ -1028,8 +1101,11 @@ class _DigitalDiaryPageState extends State<DigitalDiaryPage> {
         }
 
         final r = snap.data!;
-        final showManage =
-            r.isAdmin || r.isSuperadmin || r.isHR || r.isCoordinator || r.isTeacher;
+        final showManage = r.isAdmin ||
+            r.isSuperadmin ||
+            r.isHR ||
+            r.isCoordinator ||
+            r.isTeacher;
 
         return SingleChildScrollView(
           padding: const EdgeInsets.all(16),
@@ -1078,22 +1154,27 @@ class DiaryCardWidget extends StatelessWidget {
     final seenCount = diary.views.length;
     final ackCount = diary.acknowledgements.length;
     final downloadCount = summarizeDownloads(diary.downloads).length;
-    final attachments = (diary.attachments).map<Map<String, String?>>((a) {
-      if (a is String) {
-        return {'href': a, 'label': a.split('/').last};
-      }
-      if (a is Map) {
-        final href = a['fileUrl']?.toString() ?? a['url']?.toString();
-        final label = a['originalName']?.toString() ??
-            a['name']?.toString() ??
-            (href != null ? href.split('/').last : 'Attachment');
-        return {'href': href, 'label': label};
-      }
-      return {'href': null, 'label': 'Attachment'};
-    }).where((a) => a['href'] != null).toList();
+    final attachments = (diary.attachments)
+        .map<Map<String, String?>>((a) {
+          if (a is String) {
+            return {'href': a, 'label': a.split('/').last};
+          }
+          if (a is Map) {
+            final href = a['fileUrl']?.toString() ?? a['url']?.toString();
+            final label = a['originalName']?.toString() ??
+                a['name']?.toString() ??
+                (href != null ? href.split('/').last : 'Attachment');
+            return {'href': href, 'label': label};
+          }
+          return {'href': null, 'label': 'Attachment'};
+        })
+        .where((a) => a['href'] != null)
+        .toList();
 
-    final className = safeStr(diary.classObj?['class_name'] ?? diary.classObj?['name']);
-    final sectionName = safeStr(diary.sectionObj?['section_name'] ?? diary.sectionObj?['name']);
+    final className =
+        safeStr(diary.classObj?['class_name'] ?? diary.classObj?['name']);
+    final sectionName =
+        safeStr(diary.sectionObj?['section_name'] ?? diary.sectionObj?['name']);
     final subjectName = safeStr(diary.subject?['name']);
 
     return Card(
@@ -1137,7 +1218,8 @@ class DiaryCardWidget extends StatelessWidget {
                         runSpacing: 8,
                         children: [
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 5),
                             decoration: BoxDecoration(
                               color: color.withOpacity(0.10),
                               borderRadius: BorderRadius.circular(999),
@@ -1196,7 +1278,8 @@ class DiaryCardWidget extends StatelessWidget {
                 runSpacing: 8,
                 children: attachments.map((a) {
                   return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     decoration: BoxDecoration(
                       color: Colors.grey.shade50,
                       borderRadius: BorderRadius.circular(12),
@@ -1228,15 +1311,27 @@ class DiaryCardWidget extends StatelessWidget {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      _CountBadge(icon: Icons.visibility_rounded, label: 'Views', count: seenCount),
-                      _CountBadge(icon: Icons.check_circle_rounded, label: 'Ack', count: ackCount),
-                      _CountBadge(icon: Icons.download_rounded, label: 'Downloads', count: downloadCount),
+                      _CountBadge(
+                          icon: Icons.visibility_rounded,
+                          label: 'Views',
+                          count: seenCount),
+                      _CountBadge(
+                          icon: Icons.check_circle_rounded,
+                          label: 'Ack',
+                          count: ackCount),
+                      _CountBadge(
+                          icon: Icons.download_rounded,
+                          label: 'Downloads',
+                          count: downloadCount),
                     ],
                   ),
                 ),
               ],
             ),
-            if (onEdit != null || onDelete != null || showDownloadAction || showAcknowledgementAction) ...[
+            if (onEdit != null ||
+                onDelete != null ||
+                showDownloadAction ||
+                showAcknowledgementAction) ...[
               const SizedBox(height: 14),
               Wrap(
                 spacing: 10,
@@ -1393,8 +1488,10 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
     setState(() => applyLoading = true);
 
     try {
-      final cl = await dio.get('/classes', options: Options(headers: await getAuthHeaders()));
-      final sec = await dio.get('/sections', options: Options(headers: await getAuthHeaders()));
+      final cl = await dio.get('/classes',
+          options: Options(headers: await getAuthHeaders()));
+      final sec = await dio.get('/sections',
+          options: Options(headers: await getAuthHeaders()));
       setState(() {
         classes = (cl.data is List) ? cl.data : (cl.data['classes'] ?? []);
         sections = (sec.data is List) ? sec.data : (sec.data['sections'] ?? []);
@@ -1420,7 +1517,8 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
     }
 
     try {
-      final r = await dio.get('/sessions', options: Options(headers: await getAuthHeaders()));
+      final r = await dio.get('/sessions',
+          options: Options(headers: await getAuthHeaders()));
       final list = (r.data is List) ? r.data : (r.data['items'] ?? []);
       setState(() => sessions = list);
       if (list.isNotEmpty) {
@@ -1447,12 +1545,18 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
       final params = {
         'page': p,
         'pageSize': PAGE_SIZE,
-        if ((filters['from'] ?? '').toString().isNotEmpty) 'dateFrom': filters['from'],
-        if ((filters['to'] ?? '').toString().isNotEmpty) 'dateTo': filters['to'],
-        if ((filters['classId'] ?? '').toString().isNotEmpty) 'classId': filters['classId'],
-        if ((filters['sectionId'] ?? '').toString().isNotEmpty) 'sectionId': filters['sectionId'],
-        if ((filters['subjectId'] ?? '').toString().isNotEmpty) 'subjectId': filters['subjectId'],
-        if ((filters['type'] ?? '').toString().isNotEmpty) 'type': filters['type'],
+        if ((filters['from'] ?? '').toString().isNotEmpty)
+          'dateFrom': filters['from'],
+        if ((filters['to'] ?? '').toString().isNotEmpty)
+          'dateTo': filters['to'],
+        if ((filters['classId'] ?? '').toString().isNotEmpty)
+          'classId': filters['classId'],
+        if ((filters['sectionId'] ?? '').toString().isNotEmpty)
+          'sectionId': filters['sectionId'],
+        if ((filters['subjectId'] ?? '').toString().isNotEmpty)
+          'subjectId': filters['subjectId'],
+        if ((filters['type'] ?? '').toString().isNotEmpty)
+          'type': filters['type'],
         if ((filters['q'] ?? '').toString().isNotEmpty) 'q': filters['q'],
       };
 
@@ -1512,7 +1616,9 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
       return {
         'id': a is Map ? a['id'] : null,
         'name': a is Map
-            ? (a['originalName'] ?? a['name'] ?? (a['fileUrl']?.toString().split('/').last ?? 'Attachment'))
+            ? (a['originalName'] ??
+                a['name'] ??
+                (a['fileUrl']?.toString().split('/').last ?? 'Attachment'))
             : (a is String ? a.split('/').last : 'Attachment'),
         'url': a is Map ? (a['fileUrl'] ?? a['url']) : (a is String ? a : null),
         'kind': a is Map ? (a['kind'] ?? '') : '',
@@ -1535,7 +1641,8 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
         'attachments': existing,
         'selectedFiles': [],
         'replaceAttachments': false,
-        'keepAttachmentIds': existing.where((a) => a['id'] != null).map((a) => a['id']).toList(),
+        'keepAttachmentIds':
+            existing.where((a) => a['id'] != null).map((a) => a['id']).toList(),
       };
       multiMode = false;
       targets = [];
@@ -1551,7 +1658,9 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
         safeStr(form['title']).isEmpty ||
         safeStr(form['content']).isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill session, date, type, title and content.')),
+        const SnackBar(
+            content:
+                Text('Please fill session, date, type, title and content.')),
       );
       return;
     }
@@ -1565,7 +1674,9 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
 
     if (multiMode && targets.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please add at least one Class & Section in Targets.')),
+        const SnackBar(
+            content:
+                Text('Please add at least one Class & Section in Targets.')),
       );
       return;
     }
@@ -1578,7 +1689,8 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
 
       if (!hasFiles && !(isUpdate && form['replaceAttachments'] == true)) {
         final payload = {
-          'sessionId': int.tryParse('${form['sessionId']}') ?? form['sessionId'],
+          'sessionId':
+              int.tryParse('${form['sessionId']}') ?? form['sessionId'],
           'date': form['date'],
           'type': form['type'],
           'title': form['title'],
@@ -1590,16 +1702,23 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
             final m = a is Map ? a : {};
             return {
               'fileUrl': m['url'] ?? m['fileUrl'] ?? '',
-              'originalName': m['name'] ?? m['originalName'] ?? (m['url']?.toString().split('/').last ?? ''),
+              'originalName': m['name'] ??
+                  m['originalName'] ??
+                  (m['url']?.toString().split('/').last ?? ''),
               'mimeType': m['mimeType'] ?? 'application/octet-stream',
               'size': m['size'] ?? 0,
             };
           }).toList(),
-          if (isUpdate) 'replaceAttachments': form['replaceAttachments'] == true,
+          if (isUpdate)
+            'replaceAttachments': form['replaceAttachments'] == true,
           if (multiMode && !isUpdate) 'targets': targets,
-          if (!multiMode && !isUpdate) 'classId': int.tryParse('${form['classId']}') ?? form['classId'],
-          if (!multiMode && !isUpdate) 'sectionId': int.tryParse('${form['sectionId']}') ?? form['sectionId'],
-          if (!isUpdate && !multiMode && selectedStudentIds.isNotEmpty) 'studentIds': selectedStudentIds,
+          if (!multiMode && !isUpdate)
+            'classId': int.tryParse('${form['classId']}') ?? form['classId'],
+          if (!multiMode && !isUpdate)
+            'sectionId':
+                int.tryParse('${form['sectionId']}') ?? form['sectionId'],
+          if (!isUpdate && !multiMode && selectedStudentIds.isNotEmpty)
+            'studentIds': selectedStudentIds,
         };
 
         if (isUpdate) {
@@ -1635,8 +1754,10 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
         if (multiMode && form['id'] == null) {
           fd.fields.add(MapEntry('targets', jsonEncode(targets)));
           for (var i = 0; i < targets.length; i++) {
-            fd.fields.add(MapEntry('targets[$i][classId]', '${targets[i]['classId']}'));
-            fd.fields.add(MapEntry('targets[$i][sectionId]', '${targets[i]['sectionId']}'));
+            fd.fields.add(
+                MapEntry('targets[$i][classId]', '${targets[i]['classId']}'));
+            fd.fields.add(MapEntry(
+                'targets[$i][sectionId]', '${targets[i]['sectionId']}'));
           }
         } else {
           fd.fields.add(MapEntry('classId', '${form['classId']}'));
@@ -1651,7 +1772,8 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
           if (form['replaceAttachments'] == true) {
             fd.fields.add(const MapEntry('replaceAttachments', 'true'));
           } else {
-            fd.fields.add(MapEntry('existingFiles', jsonEncode(form['keepAttachmentIds'] ?? [])));
+            fd.fields.add(MapEntry(
+                'existingFiles', jsonEncode(form['keepAttachmentIds'] ?? [])));
           }
         }
 
@@ -1660,11 +1782,15 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
           try {
             if (f is PlatformFile && f.path != null) {
               fd.files.add(
-                MapEntry('files', MultipartFile.fromFileSync(f.path!, filename: f.name)),
+                MapEntry('files',
+                    MultipartFile.fromFileSync(f.path!, filename: f.name)),
               );
             } else if (f is File) {
               fd.files.add(
-                MapEntry('files', MultipartFile.fromFileSync(f.path, filename: f.path.split('/').last)),
+                MapEntry(
+                    'files',
+                    MultipartFile.fromFileSync(f.path,
+                        filename: f.path.split('/').last)),
               );
             }
           } catch (_) {}
@@ -1679,7 +1805,9 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(form['id'] != null ? 'Diary updated' : 'Diary created')),
+        SnackBar(
+            content:
+                Text(form['id'] != null ? 'Diary updated' : 'Diary created')),
       );
       setState(() => showModal = false);
       await loadDiaries(1);
@@ -1699,7 +1827,9 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: Text(ids.length > 1 ? 'Delete this message from all classes?' : 'Delete this diary?'),
+        title: Text(ids.length > 1
+            ? 'Delete this message from all classes?'
+            : 'Delete this diary?'),
         content: Text(
           ids.length > 1
               ? 'This will remove all copies of this message across selected classes/sections.'
@@ -1726,7 +1856,8 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
         await diaryDelete('/$id');
       }
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Deleted')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Deleted')));
       await loadDiaries(1);
     } catch (e) {
       if (!mounted) return;
@@ -1773,7 +1904,8 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
   }
 
   Future<void> loadStudentsForPicker() async {
-    if (safeStr(form['classId']).isEmpty || safeStr(form['sectionId']).isEmpty) {
+    if (safeStr(form['classId']).isEmpty ||
+        safeStr(form['sectionId']).isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select class and section first.')),
       );
@@ -1817,17 +1949,21 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Attachments (Links)', style: TextStyle(fontWeight: FontWeight.w700)),
+        const Text('Attachments (Links)',
+            style: TextStyle(fontWeight: FontWeight.w700)),
         const SizedBox(height: 6),
         if (attachmentsList.isEmpty)
-          const Text('No attachment links added.', style: TextStyle(color: Colors.black54)),
+          const Text('No attachment links added.',
+              style: TextStyle(color: Colors.black54)),
         ...attachmentsList.asMap().entries.map((entry) {
           final i = entry.key;
           final item = entry.value;
           return ListTile(
             dense: true,
             contentPadding: EdgeInsets.zero,
-            title: Text(safeStr(item['name']).isEmpty ? 'Attachment' : safeStr(item['name'])),
+            title: Text(safeStr(item['name']).isEmpty
+                ? 'Attachment'
+                : safeStr(item['name'])),
             subtitle: Text(safeStr(item['url'])),
             trailing: IconButton(
               icon: const Icon(Icons.close),
@@ -1854,7 +1990,8 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
                     children: [
                       TextField(
                         controller: nameCtrl,
-                        decoration: const InputDecoration(labelText: 'File name'),
+                        decoration:
+                            const InputDecoration(labelText: 'File name'),
                       ),
                       const SizedBox(height: 8),
                       TextField(
@@ -1870,8 +2007,12 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
                     ),
                     TextButton(
                       onPressed: () {
-                        final list = List.from((form['attachments'] ?? []) as List);
-                        list.add({'name': nameCtrl.text.trim(), 'url': urlCtrl.text.trim()});
+                        final list =
+                            List.from((form['attachments'] ?? []) as List);
+                        list.add({
+                          'name': nameCtrl.text.trim(),
+                          'url': urlCtrl.text.trim()
+                        });
                         setState(() => form['attachments'] = list);
                         Navigator.of(ctx).pop();
                       },
@@ -1906,8 +2047,11 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
                 children: [
                   Expanded(
                     child: Text(
-                      form['id'] != null ? 'Edit Diary Entry' : 'Create New Diary Entry',
-                      style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+                      form['id'] != null
+                          ? 'Edit Diary Entry'
+                          : 'Create New Diary Entry',
+                      style: const TextStyle(
+                          fontSize: 19, fontWeight: FontWeight.w800),
                     ),
                   ),
                   IconButton(
@@ -1938,7 +2082,8 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
                   Expanded(
                     child: TextFormField(
                       initialValue: safeStr(form['date']),
-                      decoration: const InputDecoration(labelText: 'Date (yyyy-mm-dd)'),
+                      decoration:
+                          const InputDecoration(labelText: 'Date (yyyy-mm-dd)'),
                       onChanged: (v) => setState(() => form['date'] = v),
                     ),
                   ),
@@ -1947,9 +2092,12 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
                     child: DropdownButtonFormField(
                       value: form['type'],
                       items: const [
-                        DropdownMenuItem(value: 'ANNOUNCEMENT', child: Text('Announcement')),
-                        DropdownMenuItem(value: 'HOMEWORK', child: Text('Homework')),
-                        DropdownMenuItem(value: 'REMARK', child: Text('Remark')),
+                        DropdownMenuItem(
+                            value: 'ANNOUNCEMENT', child: Text('Announcement')),
+                        DropdownMenuItem(
+                            value: 'HOMEWORK', child: Text('Homework')),
+                        DropdownMenuItem(
+                            value: 'REMARK', child: Text('Remark')),
                       ],
                       onChanged: (v) => setState(() => form['type'] = v),
                       decoration: const InputDecoration(labelText: 'Type'),
@@ -1968,7 +2116,9 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
                             .map<DropdownMenuItem<String>>(
                               (c) => DropdownMenuItem(
                                 value: safeStr(c['id']),
-                                child: Text(c['class_name'] ?? c['name'] ?? '${c['id']}'),
+                                child: Text(c['class_name'] ??
+                                    c['name'] ??
+                                    '${c['id']}'),
                               ),
                             )
                             .toList(),
@@ -1984,7 +2134,9 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
                             .map<DropdownMenuItem<String>>(
                               (s) => DropdownMenuItem(
                                 value: safeStr(s['id']),
-                                child: Text(s['section_name'] ?? s['name'] ?? '${s['id']}'),
+                                child: Text(s['section_name'] ??
+                                    s['name'] ??
+                                    '${s['id']}'),
                               ),
                             )
                             .toList(),
@@ -2007,7 +2159,8 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
                   ),
                 ],
                 onChanged: (v) => setState(() => form['subjectId'] = v),
-                decoration: const InputDecoration(labelText: 'Subject (Optional)'),
+                decoration:
+                    const InputDecoration(labelText: 'Subject (Optional)'),
               ),
               const SizedBox(height: 12),
               TextFormField(
@@ -2024,13 +2177,15 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
               ),
               const SizedBox(height: 16),
               if (form['id'] == null && !multiMode) ...[
-                const Text('Students (optional)', style: TextStyle(fontWeight: FontWeight.w700)),
+                const Text('Students (optional)',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),
                 Row(
                   children: [
                     Expanded(
                       child: TextFormField(
-                        decoration: const InputDecoration(hintText: 'Search students (min 2 chars)'),
+                        decoration: const InputDecoration(
+                            hintText: 'Search students (min 2 chars)'),
                         onChanged: (v) => setState(() => studentSearch = v),
                       ),
                     ),
@@ -2048,7 +2203,8 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
                     child: CircularProgressIndicator(),
                   )
                 else if (studentsForPicker.isEmpty)
-                  const Text('No students loaded.', style: TextStyle(color: Colors.black54)),
+                  const Text('No students loaded.',
+                      style: TextStyle(color: Colors.black54)),
                 if (studentsForPicker.isNotEmpty)
                   SizedBox(
                     height: 180,
@@ -2078,7 +2234,8 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
               ],
               _buildAttachmentLinksEditor(),
               const SizedBox(height: 16),
-              const Text('Upload Files from Computer', style: TextStyle(fontWeight: FontWeight.w700)),
+              const Text('Upload Files from Computer',
+                  style: TextStyle(fontWeight: FontWeight.w700)),
               const SizedBox(height: 8),
               ElevatedButton.icon(
                 onPressed: pickFilesForForm,
@@ -2102,10 +2259,13 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   value: form['replaceAttachments'] == true,
-                  onChanged: (v) => setState(() => form['replaceAttachments'] = v),
-                  title: const Text('Replace all existing attachments with the ones above'),
+                  onChanged: (v) =>
+                      setState(() => form['replaceAttachments'] = v),
+                  title: const Text(
+                      'Replace all existing attachments with the ones above'),
                 ),
-                if (!(form['replaceAttachments'] == true) && existingAttachments.any((a) => a['id'] != null))
+                if (!(form['replaceAttachments'] == true) &&
+                    existingAttachments.any((a) => a['id'] != null))
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -2118,7 +2278,8 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
                             .where((a) => a['id'] != null)
                             .map<Widget>((a) {
                           final id = a['id'];
-                          final currentKeepIds = (form['keepAttachmentIds'] ?? []) as List;
+                          final currentKeepIds =
+                              (form['keepAttachmentIds'] ?? []) as List;
                           return FilterChip(
                             label: Text(safeStr(a['name'])),
                             selected: currentKeepIds.contains(id),
@@ -2201,7 +2362,8 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
         ),
         const SizedBox(height: 14),
         Card(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           elevation: 1.5,
           child: Padding(
             padding: const EdgeInsets.all(14),
@@ -2235,7 +2397,8 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
         ),
         const SizedBox(height: 14),
         if (applyLoading && diaries.isEmpty)
-          const Center(child: Padding(
+          const Center(
+              child: Padding(
             padding: EdgeInsets.all(18),
             child: CircularProgressIndicator(),
           ))
@@ -2278,7 +2441,8 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
                     diary: d,
                     canAck: false,
                     showAcknowledgementAction: true,
-                    onViewAcknowledgements: () => showDiaryAcknowledgementsSheet(context, d),
+                    onViewAcknowledgements: () =>
+                        showDiaryAcknowledgementsSheet(context, d),
                     showDownloadAction: true,
                     onViewDownloads: () => showDiaryDownloadsSheet(context, d),
                     onEdit: () => openEdit(d),
@@ -2292,7 +2456,9 @@ class _ManageDiariesWidgetState extends State<ManageDiariesWidget> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     OutlinedButton(
-                      onPressed: page <= 1 || pageLoading ? null : () => loadDiaries(page - 1),
+                      onPressed: page <= 1 || pageLoading
+                          ? null
+                          : () => loadDiaries(page - 1),
                       child: const Text('Prev'),
                     ),
                     const SizedBox(width: 12),
@@ -2340,8 +2506,10 @@ class _DiaryFeedWidgetState extends State<DiaryFeedWidget> {
   Future<void> _initLists() async {
     setState(() => loading = true);
     try {
-      final cl = await dio.get('/classes', options: Options(headers: await getAuthHeaders()));
-      final sec = await dio.get('/sections', options: Options(headers: await getAuthHeaders()));
+      final cl = await dio.get('/classes',
+          options: Options(headers: await getAuthHeaders()));
+      final sec = await dio.get('/sections',
+          options: Options(headers: await getAuthHeaders()));
       setState(() {
         classes = (cl.data is List) ? cl.data : (cl.data['classes'] ?? []);
         sections = (sec.data is List) ? sec.data : (sec.data['sections'] ?? []);
@@ -2355,8 +2523,10 @@ class _DiaryFeedWidgetState extends State<DiaryFeedWidget> {
     setState(() => loading = true);
     try {
       final r = await diaryGet('/student/feed/list', {
-        if (safeStr(sel['classId']).isNotEmpty) 'classId': int.tryParse(sel['classId'].toString()),
-        if (safeStr(sel['sectionId']).isNotEmpty) 'sectionId': int.tryParse(sel['sectionId'].toString()),
+        if (safeStr(sel['classId']).isNotEmpty)
+          'classId': int.tryParse(sel['classId'].toString()),
+        if (safeStr(sel['sectionId']).isNotEmpty)
+          'sectionId': int.tryParse(sel['sectionId'].toString()),
         'page': 1,
         'pageSize': PAGE_SIZE,
       });
@@ -2391,7 +2561,8 @@ class _DiaryFeedWidgetState extends State<DiaryFeedWidget> {
           children: [
             if (isNonStudent)
               Card(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18)),
                 elevation: 1.5,
                 child: Padding(
                   padding: const EdgeInsets.all(14),
@@ -2403,16 +2574,20 @@ class _DiaryFeedWidgetState extends State<DiaryFeedWidget> {
                             child: DropdownButtonFormField<String>(
                               value: safeStr(sel['classId']),
                               items: [
-                                const DropdownMenuItem(value: '', child: Text('Select Class')),
+                                const DropdownMenuItem(
+                                    value: '', child: Text('Select Class')),
                                 ...classes.map<DropdownMenuItem<String>>(
                                   (c) => DropdownMenuItem(
                                     value: safeStr(c['id']),
-                                    child: Text(c['class_name'] ?? c['name'] ?? ''),
+                                    child: Text(
+                                        c['class_name'] ?? c['name'] ?? ''),
                                   ),
                                 ),
                               ],
-                              onChanged: (v) => setState(() => sel['classId'] = v),
-                              decoration: const InputDecoration(labelText: 'Class'),
+                              onChanged: (v) =>
+                                  setState(() => sel['classId'] = v),
+                              decoration:
+                                  const InputDecoration(labelText: 'Class'),
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -2420,16 +2595,20 @@ class _DiaryFeedWidgetState extends State<DiaryFeedWidget> {
                             child: DropdownButtonFormField<String>(
                               value: safeStr(sel['sectionId']),
                               items: [
-                                const DropdownMenuItem(value: '', child: Text('Select Section')),
+                                const DropdownMenuItem(
+                                    value: '', child: Text('Select Section')),
                                 ...sections.map<DropdownMenuItem<String>>(
                                   (s) => DropdownMenuItem(
                                     value: safeStr(s['id']),
-                                    child: Text(s['section_name'] ?? s['name'] ?? ''),
+                                    child: Text(
+                                        s['section_name'] ?? s['name'] ?? ''),
                                   ),
                                 ),
                               ],
-                              onChanged: (v) => setState(() => sel['sectionId'] = v),
-                              decoration: const InputDecoration(labelText: 'Section'),
+                              onChanged: (v) =>
+                                  setState(() => sel['sectionId'] = v),
+                              decoration:
+                                  const InputDecoration(labelText: 'Section'),
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -2439,7 +2618,8 @@ class _DiaryFeedWidgetState extends State<DiaryFeedWidget> {
                                 ? const SizedBox(
                                     width: 16,
                                     height: 16,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
                                   )
                                 : const Text('Load Feed'),
                           ),
@@ -2470,7 +2650,8 @@ class _DiaryFeedWidgetState extends State<DiaryFeedWidget> {
             ),
             const SizedBox(height: 12),
             if (loading)
-              const Center(child: Padding(
+              const Center(
+                  child: Padding(
                 padding: EdgeInsets.all(18),
                 child: CircularProgressIndicator(),
               ))
@@ -2485,11 +2666,13 @@ class _DiaryFeedWidgetState extends State<DiaryFeedWidget> {
                 ),
                 child: const Column(
                   children: [
-                    Icon(Icons.info_outline_rounded, size: 52, color: Colors.blueGrey),
+                    Icon(Icons.info_outline_rounded,
+                        size: 52, color: Colors.blueGrey),
                     SizedBox(height: 10),
                     Text(
                       'No Diary Notes Yet',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                     ),
                   ],
                 ),
@@ -2506,9 +2689,13 @@ class _DiaryFeedWidgetState extends State<DiaryFeedWidget> {
                     diary: d,
                     canAck: roles.isStudent,
                     showAcknowledgementAction: showAcknowledgementAction,
-                    onViewAcknowledgements: showAcknowledgementAction ? () => showDiaryAcknowledgementsSheet(context, d) : null,
+                    onViewAcknowledgements: showAcknowledgementAction
+                        ? () => showDiaryAcknowledgementsSheet(context, d)
+                        : null,
                     showDownloadAction: showDownloadAction,
-                    onViewDownloads: showDownloadAction ? () => showDiaryDownloadsSheet(context, d) : null,
+                    onViewDownloads: showDownloadAction
+                        ? () => showDiaryDownloadsSheet(context, d)
+                        : null,
                   );
                 },
               ),

@@ -2,19 +2,28 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../auth/role_manager.dart';
+import '../services/api_service.dart';
+import 'role_switcher.dart';
+
 class TeacherDrawerMenu extends StatelessWidget {
-  const TeacherDrawerMenu({super.key});
+  final String? activeRole;
+
+  const TeacherDrawerMenu({super.key, this.activeRole});
 
   Future<void> _logout(BuildContext ctx) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('authToken');
-    await prefs.remove('activeRole');
-    // close drawer first
+    await ApiService.clearLocalSession();
+
+    if (!ctx.mounted) return;
+
     Navigator.of(ctx).pop();
-    // then navigate to login and remove all previous routes
     Navigator.of(ctx).pushNamedAndRemoveUntil('/login', (route) => false);
+    ScaffoldMessenger.of(ctx).clearSnackBars();
     ScaffoldMessenger.of(ctx).showSnackBar(
-      const SnackBar(content: Text('👋 Logged out successfully')),
+      const SnackBar(
+        content: Text('👋 Logged out successfully'),
+        behavior: SnackBarBehavior.floating,
+      ),
     );
   }
 
@@ -72,8 +81,11 @@ class TeacherDrawerMenu extends StatelessWidget {
           : const Icon(Icons.chevron_right_rounded),
       tileColor: selected ? Colors.deepPurple.withOpacity(0.06) : null,
       onTap: () {
+        if (extraAction != null) {
+          extraAction();
+          return;
+        }
         Navigator.of(context).pop(); // close drawer first
-        if (extraAction != null) extraAction();
         if (replaceAll) {
           Navigator.of(context)
               .pushNamedAndRemoveUntil(routeName, (route) => false);
@@ -94,11 +106,39 @@ class TeacherDrawerMenu extends StatelessWidget {
     final email =
         prefs.getString('email') ?? prefs.getString('teacherEmail') ?? '';
     final school = prefs.getString('schoolName') ?? '';
-    return {'name': name, 'email': email, 'school': school};
+    final role = AppRoles.normalize(prefs.getString('activeRole'));
+    return {'name': name, 'email': email, 'school': school, 'role': role};
   }
 
   @override
   Widget build(BuildContext context) {
+    final dashboardRoute = activeRole != null
+        ? AppRoles.dashboardRoute(activeRole!)
+        : (ModalRoute.of(context)?.settings.name == '/coordinator')
+            ? '/coordinator'
+            : '/teacher';
+    final isCoordinatorDrawer = activeRole == AppRoles.coordinator ||
+        ModalRoute.of(context)?.settings.name == '/coordinator';
+    final diaryRoute =
+        isCoordinatorDrawer ? '/coordinator/digital-diary' : '/teacher/diary';
+    final diaryTitle =
+        isCoordinatorDrawer ? 'View Digital Diaries' : 'Digital Diary';
+    final attendanceRoute = isCoordinatorDrawer
+        ? '/coordinator/attendance-summary'
+        : '/teacher/attendance';
+    final attendanceTitle =
+        isCoordinatorDrawer ? 'Attendance Summary' : 'Mark Attendance';
+    final timetableRoute = isCoordinatorDrawer
+        ? '/coordinator/timetable'
+        : '/teacher-timetable-display';
+    final substitutionsRoute = isCoordinatorDrawer
+        ? '/coordinator/substitution-assignment'
+        : '/teacher/substitutions';
+    final circularsRoute =
+        isCoordinatorDrawer ? '/coordinator/circulars' : '/teacher/circulars';
+    final circularsTitle =
+        isCoordinatorDrawer ? 'Circular Management' : 'Circulars';
+
     return Drawer(
       child: Column(
         children: [
@@ -106,13 +146,15 @@ class TeacherDrawerMenu extends StatelessWidget {
           FutureBuilder<Map<String, String>>(
             future: _loadProfile(),
             builder: (ctx, snap) {
-              final data =
-                  snap.data ?? {'name': 'Teacher Name', 'email': '', 'school': ''};
+              final data = snap.data ??
+                  {'name': 'Teacher Name', 'email': '', 'school': ''};
               final displayName =
                   (data['name'] ?? '').isNotEmpty ? data['name']! : 'Teacher';
               final displayEmail = (data['email'] ?? '').isNotEmpty
                   ? data['email']!
                   : 'teacher@example.com';
+              final roleLabel =
+                  AppRoles.label(data['role'] ?? AppRoles.teacher);
 
               return Container(
                 width: double.infinity,
@@ -131,7 +173,8 @@ class TeacherDrawerMenu extends StatelessWidget {
                       const CircleAvatar(
                         radius: 32,
                         backgroundColor: Colors.white24,
-                        child: Icon(Icons.person, color: Colors.white, size: 36),
+                        child:
+                            Icon(Icons.person, color: Colors.white, size: 36),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -154,6 +197,15 @@ class TeacherDrawerMenu extends StatelessWidget {
                                 fontSize: 13,
                               ),
                             ),
+                            const SizedBox(height: 4),
+                            Text(
+                              roleLabel,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -170,40 +222,83 @@ class TeacherDrawerMenu extends StatelessWidget {
               padding: EdgeInsets.zero,
               children: [
                 const SizedBox(height: 8),
-
                 _tile(
                   context: context,
-                  routeName: '/teacher',
+                  routeName: dashboardRoute,
                   icon: Icons.dashboard_rounded,
                   title: 'Dashboard',
                   color: const Color(0xFF00C6FF),
                   replaceAll: true,
                 ),
-
                 _tile(
                   context: context,
-                  routeName: '/teacher/attendance',
+                  routeName: '/choose-role',
+                  icon: Icons.switch_account_rounded,
+                  title: 'Switch Role',
+                  color: const Color(0xFF111827),
+                  extraAction: () => RoleSwitcher.show(context),
+                ),
+                _tile(
+                  context: context,
+                  routeName: attendanceRoute,
                   icon: Icons.check_box_outlined,
-                  title: 'Mark Attendance',
+                  title: attendanceTitle,
                   color: const Color(0xFF6C63FF),
                 ),
-
+                if (isCoordinatorDrawer)
+                  _tile(
+                    context: context,
+                    routeName: '/coordinator/students',
+                    icon: Icons.school_rounded,
+                    title: 'Students View',
+                    color: const Color(0xFF0F766E),
+                  ),
+                if (isCoordinatorDrawer)
+                  _tile(
+                    context: context,
+                    routeName: '/coordinator/academic-calendar',
+                    icon: Icons.calendar_month_rounded,
+                    title: 'Academic Calendar',
+                    color: const Color(0xFF1D4ED8),
+                  ),
                 _tile(
                   context: context,
-                  routeName: '/teacher-timetable-display',
+                  routeName: timetableRoute,
                   icon: Icons.table_chart,
                   title: 'Timetable',
                   color: const Color(0xFF38EF7D),
                 ),
-
+                if (isCoordinatorDrawer)
+                  _tile(
+                    context: context,
+                    routeName: '/coordinator/incharge-assignment',
+                    icon: Icons.supervisor_account_rounded,
+                    title: 'Incharge Assignment',
+                    color: const Color(0xFF2563EB),
+                  ),
+                if (isCoordinatorDrawer)
+                  _tile(
+                    context: context,
+                    routeName: '/coordinator/subjects',
+                    icon: Icons.menu_book_rounded,
+                    title: 'Subjects',
+                    color: const Color(0xFFB45309),
+                  ),
+                if (isCoordinatorDrawer)
+                  _tile(
+                    context: context,
+                    routeName: '/coordinator/syllabus-approvals',
+                    icon: Icons.fact_check_rounded,
+                    title: 'Syllabus Approvals',
+                    color: const Color(0xFF047857),
+                  ),
                 _tile(
                   context: context,
-                  routeName: '/teacher/substitutions',
+                  routeName: substitutionsRoute,
                   icon: Icons.swap_horiz,
                   title: 'Substitutions',
                   color: const Color(0xFFFFA726),
                 ),
-
                 _tile(
                   context: context,
                   routeName: '/teacher/substituted',
@@ -211,67 +306,62 @@ class TeacherDrawerMenu extends StatelessWidget {
                   title: 'Substituted (Me)',
                   color: const Color(0xFFEF5350),
                 ),
-
                 _tile(
                   context: context,
-                  routeName: '/view-circulars',
+                  routeName: circularsRoute,
                   icon: Icons.campaign,
-                  title: 'Circulars',
+                  title: circularsTitle,
                   color: const Color(0xFF8E2DE2),
                 ),
-
                 _tile(
                   context: context,
-                  routeName: '/employee-leave-request',
+                  routeName: '/teacher/leave-requests',
                   icon: Icons.beach_access,
-                  title: 'Leave Requests',
+                  title: 'Student Leave Requests',
                   color: const Color(0xFF4A90E2),
                 ),
-
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Text(
-                    'Quick actions',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      color: Colors.black54,
-                    ),
-                  ),
-                ),
-
                 _tile(
                   context: context,
-                  routeName: '/notifications',
-                  icon: Icons.notifications_active_rounded,
-                  title: 'Notifications',
+                  routeName: '/teacher/my-leaves',
+                  icon: Icons.event_note,
+                  title: 'My Leave',
                   color: const Color(0xFF00BFA6),
-                  subtitle: 'Unread alerts',
                 ),
-
                 _tile(
                   context: context,
-                  routeName: '/profile',
-                  icon: Icons.person_rounded,
-                  title: 'Profile',
+                  routeName: diaryRoute,
+                  icon: Icons.book,
+                  title: diaryTitle,
                   color: const Color(0xFF7ED957),
                 ),
-
                 _tile(
                   context: context,
-                  routeName: '/settings',
-                  icon: Icons.settings_rounded,
-                  title: 'Settings',
+                  routeName: '/teacher/messages',
+                  icon: Icons.forum_rounded,
+                  title: 'Messages',
                   color: const Color(0xFF9C27B0),
                 ),
-
                 _tile(
                   context: context,
-                  routeName: '/help',
-                  icon: Icons.help_rounded,
-                  title: 'Help & Support',
+                  routeName: '/teacher/marks-entry',
+                  icon: Icons.edit_note_rounded,
+                  title: 'Marks Entry',
+                  color: const Color(0xFF2563EB),
+                ),
+                _tile(
+                  context: context,
+                  routeName: '/teacher/lesson-plan',
+                  icon: Icons.menu_book_rounded,
+                  title: 'Lesson Plan',
+                  color: const Color(0xFF0F766E),
+                ),
+                _tile(
+                  context: context,
+                  routeName: '/my-attendance-calendar',
+                  icon: Icons.calendar_today,
+                  title: 'My Attendance',
                   color: const Color(0xFF4A90E2),
                 ),
-
                 const SizedBox(height: 8),
               ],
             ),
@@ -296,8 +386,7 @@ class TeacherDrawerMenu extends StatelessWidget {
             ),
           ),
           Padding(
-            padding:
-                const EdgeInsets.only(bottom: 12, left: 16, right: 16),
+            padding: const EdgeInsets.only(bottom: 12, left: 16, right: 16),
             child: Text(
               'App version 1.0.0',
               style: TextStyle(color: Colors.grey.shade600, fontSize: 12),

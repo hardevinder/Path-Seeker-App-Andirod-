@@ -7,17 +7,15 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'teacher_circulars_screen.dart';
-import 'substitution_listing.dart';
-import 'substituted_listing.dart';
 import 'teacher_timetable_display.dart';
-import 'teacher_leave_requests.dart';
+import '../../auth/role_manager.dart';
 import '../../constants/constants.dart';
 import '../../widgets/teacher_app_bar.dart';
+import '../../widgets/teacher_drawer_menu.dart';
 import '../../services/api_service.dart';
 import 'teacher_digital_diary_screen.dart';
 import 'teacher_my_leave_requests_screen.dart';
 import 'teacher_messages_screen.dart';
-
 
 /// Teacher Dashboard Screen
 /// Displays key performance indicators, quick actions, and recent activities for teachers.
@@ -42,6 +40,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
 
   // User Profile Data
   late String _username;
+  String _activeRole = AppRoles.teacher;
   String? _teacherName;
   String? _email;
   String? _phone;
@@ -126,6 +125,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
   Future<void> _loadUserPreferences() async {
     final prefs = await SharedPreferences.getInstance();
     _username = prefs.getString('username') ?? prefs.getString('userId') ?? '';
+    _activeRole = AppRoles.normalize(prefs.getString('activeRole'));
     _teacherName = prefs.getString('name') ?? prefs.getString('teacherName');
     _schoolName = prefs.getString('schoolName') ?? appName;
   }
@@ -205,7 +205,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
       final response = await ApiService.rawGet('/periods');
       if (response.statusCode == 200 && mounted) {
         final json = jsonDecode(response.body);
-        final periods = (json is List) ? json : (json['periods'] ?? <dynamic>[]);
+        final periods =
+            (json is List) ? json : (json['periods'] ?? <dynamic>[]);
         setState(() => _periods = periods.cast<dynamic>());
       }
     } catch (_) {
@@ -230,9 +231,11 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
         }
         final todayName = DateFormat('EEEE').format(DateTime.now());
         final todayClasses = timetable.where((record) {
-          final day =
-              (record is Map && record['day'] != null) ? record['day'].toString() : '';
-          return _normalizeDayName(day).toLowerCase() == todayName.toLowerCase();
+          final day = (record is Map && record['day'] != null)
+              ? record['day'].toString()
+              : '';
+          return _normalizeDayName(day).toLowerCase() ==
+              todayName.toLowerCase();
         }).toList();
         setState(() {
           _todayClasses = todayClasses;
@@ -258,8 +261,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
           final classId = _extractClassId(firstStudent);
           if (classId != null) {
             final todayString = _dateFormat.format(DateTime.now());
-            final attendanceResponse =
-                await ApiService.rawGet('/attendance/date/$todayString/$classId');
+            final attendanceResponse = await ApiService.rawGet(
+                '/attendance/date/$todayString/$classId');
             if (attendanceResponse.statusCode == 200 && mounted) {
               final attendanceJson = jsonDecode(attendanceResponse.body);
               final rows = attendanceJson is List
@@ -398,7 +401,6 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
     }
   }
 
-
   /// Fetches teacher message summary for dashboard.
   Future<void> _fetchMessagesSummary() async {
     try {
@@ -505,8 +507,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
       ].join('|');
 
       final target = {
-        'classId':
-            item['classId'] ?? (item['class'] is Map ? item['class']['id'] : null),
+        'classId': item['classId'] ??
+            (item['class'] is Map ? item['class']['id'] : null),
         'sectionId': item['sectionId'] ??
             (item['section'] is Map ? item['section']['id'] : null),
         'class': item['class'] ?? (item['Class'] ?? null),
@@ -538,7 +540,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
         }
         (existing['_sourceIds'] as List).add(item['id']);
         existing['_counts'] ??= {'views': 0, 'acks': 0};
-        final addViews = (item['views'] is List) ? (item['views'] as List).length : 0;
+        final addViews =
+            (item['views'] is List) ? (item['views'] as List).length : 0;
         final addAcks = (item['acknowledgements'] is List)
             ? (item['acknowledgements'] as List).length
             : 0;
@@ -555,8 +558,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
       return map;
     }).toList();
 
-    output.sort((a, b) =>
-        _compareDates(a['createdAt'] ?? a['date'], b['createdAt'] ?? b['date']));
+    output.sort((a, b) => _compareDates(
+        a['createdAt'] ?? a['date'], b['createdAt'] ?? b['date']));
 
     return output.cast<Map<String, dynamic>>();
   }
@@ -600,11 +603,10 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
 
   /// Handles user logout.
   Future<void> _handleLogout() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('authToken');
-    await prefs.remove('activeRole');
+    await ApiService.clearLocalSession();
+
     if (mounted) {
-      Navigator.pushReplacementNamed(context, '/login');
+      Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
     }
   }
 
@@ -616,9 +618,10 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
         scaffoldKey: _scaffoldKey,
         parentContext: context,
         teacherName: _teacherName,
+        roleLabel: AppRoles.label(_activeRole),
         onLogout: _handleLogout,
       ),
-      drawer: _buildDrawer(),
+      drawer: TeacherDrawerMenu(activeRole: _activeRole),
       endDrawer: _buildNotificationsDrawer(),
       floatingActionButton: _buildChatFab(),
       body: RefreshIndicator(
@@ -657,7 +660,6 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
     );
   }
 
-
   /// Highlight banner for unread teacher messages.
   Widget _buildMessagesHighlightBanner() {
     return GestureDetector(
@@ -692,7 +694,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                     ? '$_messageUnread unread message${_messageUnread == 1 ? '' : 's'}'
                     : (_latestMessagePreview.isNotEmpty
                         ? _latestMessagePreview
-                        : 'Open teacher messages'),
+                        : 'Open ${AppRoles.label(_activeRole).toLowerCase()} messages'),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontWeight: FontWeight.w800),
@@ -752,38 +754,6 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
             ),
             const SizedBox(width: 6),
             Icon(Icons.chevron_right, color: Colors.orange.shade900),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // Drawer Widgets
-
-  /// Builds the main navigation drawer.
-  Widget _buildDrawer() {
-    return Drawer(
-      child: SafeArea(
-        child: Column(
-          children: [
-            _buildDrawerHeader('Menu'),
-            Expanded(
-              child: ListView(
-                padding: EdgeInsets.zero,
-                children: [
-                  _buildDrawerListTile(
-                      Icons.dashboard_rounded, 'Dashboard', _navigateToDashboard),
-                  _buildDrawerListTile(Icons.calendar_today, 'Timetable',
-                      () => _navigateTo('/teacher-timetable-display')),
-                  _buildDrawerListTile(Icons.forum_rounded, 'Messages',
-                      () => _navigateTo('/teacher/messages')),
-                  _buildDrawerListTile(Icons.campaign, 'Circulars',
-                      () => _navigateTo('/view-circulars')),
-                  const Divider(),
-                  _buildDrawerListTile(Icons.logout, 'Logout', _handleLogout),
-                ],
-              ),
-            ),
           ],
         ),
       ),
@@ -854,7 +824,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
       subtitle: Text(notification['message'] ?? ''),
       trailing: IconButton(
         icon: const Icon(Icons.delete_outline),
-        onPressed: () => _removeNotification(notification['id']?.toString() ?? ''),
+        onPressed: () =>
+            _removeNotification(notification['id']?.toString() ?? ''),
       ),
     );
   }
@@ -898,11 +869,6 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
 
   // Navigation Helpers
 
-  /// Navigates to dashboard.
-  void _navigateToDashboard() {
-    Navigator.pushReplacementNamed(context, '/teacher');
-  }
-
   /// Navigates to a named route.
   void _navigateTo(String route) {
     Navigator.pushNamed(context, route);
@@ -913,6 +879,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
   /// Builds the hero section with greeting and profile.
   Widget _buildHeroSection() {
     final displayName = _teacherName ?? _username;
+    final roleLabel = AppRoles.label(_activeRole);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -929,7 +896,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Good ${_getGreeting()}, ${displayName.isNotEmpty ? displayName.split(' ').first : 'Teacher'}',
+                  'Good ${_getGreeting()}, ${displayName.isNotEmpty ? displayName.split(' ').first : roleLabel}',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 16,
@@ -940,7 +907,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  _schoolName ?? appName,
+                  '$roleLabel • ${_schoolName ?? appName}',
                   style: const TextStyle(color: Colors.white70, fontSize: 13),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -1007,7 +974,9 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
       {
         'icon': Icons.forum_rounded,
         'label': 'Messages',
-        'value': _messageUnread > 0 ? _messageUnread.toString() : _messageTotal.toString(),
+        'value': _messageUnread > 0
+            ? _messageUnread.toString()
+            : _messageTotal.toString(),
         'tone': _messageUnread > 0 ? Colors.redAccent : Colors.blueAccent
       },
       {
@@ -1036,8 +1005,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
             itemBuilder: (context, index) {
               final kpi = kpis[index];
               return Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
                 child: _buildKpiCard(
                   icon: kpi['icon'] as IconData,
                   label: kpi['label'] as String,
@@ -1059,9 +1027,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
               width: isActive ? 20 : 8,
               height: 8,
               decoration: BoxDecoration(
-                color: isActive
-                    ? const Color(0xFF6C63FF)
-                    : Colors.grey.shade300,
+                color:
+                    isActive ? const Color(0xFF6C63FF) : Colors.grey.shade300,
                 borderRadius: BorderRadius.circular(8),
               ),
             );
@@ -1149,21 +1116,50 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
         'icon': Icons.person_off,
         'route': '/teacher/substituted'
       },
-      {'label': 'Circulars', 'icon': Icons.campaign, 'route': '/view-circulars'},
+      {
+        'label': 'Circulars',
+        'icon': Icons.campaign,
+        'route': '/view-circulars'
+      },
       {
         'label': 'Manage Leave Requests',
         'icon': Icons.beach_access,
         'route': '/teacher/leave-requests'
       },
       {
-          'label': 'My Leave', // ✅ NEW TAB
-          'icon': Icons.event_note,
-          'route': '/teacher/my-leaves'
-        },
+        'label': 'My Leave', // ✅ NEW TAB
+        'icon': Icons.event_note,
+        'route': '/teacher/my-leaves'
+      },
       {
         'label': 'Digital Diary',
         'icon': Icons.book,
         'route': '/teacher/digital-diary'
+      },
+      {
+        'label': 'Marks Entry',
+        'icon': Icons.edit_note_rounded,
+        'route': '/teacher/marks-entry'
+      },
+      {
+        'label': 'Lesson Plan',
+        'icon': Icons.menu_book_rounded,
+        'route': '/teacher/lesson-plan'
+      },
+      {
+        'label': 'Assignments',
+        'icon': Icons.assignment_rounded,
+        'route': '/teacher/assignments-hub'
+      },
+      {
+        'label': 'Student Remarks',
+        'icon': Icons.chat_bubble_outline_rounded,
+        'route': '/teacher/student-remarks'
+      },
+      {
+        'label': 'Co-Scholastic',
+        'icon': Icons.stars_rounded,
+        'route': '/teacher/co-scholastic'
       },
       {
         'label': 'My Attendance',
@@ -1213,7 +1209,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                   crossAxisCount: crossAxisCount,
                   mainAxisSpacing: 8,
                   crossAxisSpacing: 8,
-                  childAspectRatio: 1.1, // Slightly increased to prevent overflow
+                  childAspectRatio:
+                      1.1, // Slightly increased to prevent overflow
                 ),
                 itemBuilder: (context, index) {
                   final action = actions[index];
@@ -1288,7 +1285,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                     top: -7,
                     right: -7,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
                         color: Colors.red,
                         borderRadius: BorderRadius.circular(999),
@@ -1348,7 +1346,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
       case '/teacher-timetable-display':
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const TeacherTimetableDisplayScreen()),
+          MaterialPageRoute(
+              builder: (_) => const TeacherTimetableDisplayScreen()),
         );
         break;
       case '/teacher/leave-requests':
@@ -1370,6 +1369,18 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
         Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => TeacherMyLeaveRequestsScreen()),
+        );
+        break;
+      case '/teacher/assignments-hub':
+      case '/teacher/student-remarks':
+      case '/teacher/co-scholastic':
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '${route == '/teacher/assignments-hub' ? 'Assignments and assignment marking' : route == '/teacher/student-remarks' ? 'Student Remarks Entry' : 'Co-Scholastic Entry'} is available on web. Mobile page is not added yet.',
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
         );
         break;
       default:
@@ -1470,17 +1481,20 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
       );
     }
     return Column(
-      children:
-          _todayClasses.map((record) => _buildTimetableListTile(record)).toList(),
+      children: _todayClasses
+          .map((record) => _buildTimetableListTile(record))
+          .toList(),
     );
   }
 
   /// Builds a list tile for a timetable entry.
   Widget _buildTimetableListTile(dynamic record) {
     final data = record is Map ? record : <String, dynamic>{};
-    final period =
-        (data['Period']?['name'] ?? data['period_name'] ?? data['period'] ?? '-')
-            .toString();
+    final period = (data['Period']?['name'] ??
+            data['period_name'] ??
+            data['period'] ??
+            '-')
+        .toString();
     final className =
         (data['Class']?['class_name'] ?? data['Class'] ?? data['class'] ?? '-')
             .toString();
@@ -1530,7 +1544,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                 width: 110,
                 child: ElevatedButton(
                   onPressed: () => _navigateTo('/teacher/attendance'),
-                  child: Text(_attendanceMarked == true ? 'Update' : 'Mark Now'),
+                  child:
+                      Text(_attendanceMarked == true ? 'Update' : 'Mark Now'),
                 ),
               ),
             ],
@@ -1616,18 +1631,18 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
           if (_substitutionsTook.isNotEmpty || _substitutionsFreed.isNotEmpty)
             Column(
               children: [
-                ..._substitutionsTook
-                    .take(3)
-                    .map((s) => _buildSubstitutionText(s,
-                        isCovering: true, isSubstituted: false)),
-                if (_substitutionsTook.isNotEmpty && _substitutionsFreed.isNotEmpty)
+                ..._substitutionsTook.take(3).map((s) => _buildSubstitutionText(
+                    s,
+                    isCovering: true,
+                    isSubstituted: false)),
+                if (_substitutionsTook.isNotEmpty &&
+                    _substitutionsFreed.isNotEmpty)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 4),
                     child: Divider(),
                   ),
-                ..._substitutionsFreed
-                    .take(3)
-                    .map((s) => _buildSubstitutionText(s,
+                ..._substitutionsFreed.take(3).map((s) =>
+                    _buildSubstitutionText(s,
                         isCovering: false, isSubstituted: false)),
               ],
             )
@@ -1707,19 +1722,23 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
   Widget _buildSubstitutionText(dynamic sub,
       {required bool isCovering, required bool isSubstituted}) {
     final data = sub is Map ? sub : <String, dynamic>{};
-    final className =
-        (data['Class']?['class_name'] ?? data['class'] ?? data['className'] ?? '-')
-            .toString();
+    final className = (data['Class']?['class_name'] ??
+            data['class'] ??
+            data['className'] ??
+            '-')
+        .toString();
     final subject =
         (data['Subject']?['name'] ?? data['subject'] ?? '-').toString();
-    final prefix = isSubstituted ? 'Substituted' : (isCovering ? 'Covering' : 'Freed');
+    final prefix =
+        isSubstituted ? 'Substituted' : (isCovering ? 'Covering' : 'Freed');
     final coveredBy = isSubstituted
         ? ((data['Teacher'] is Map
-                    ? data['Teacher']['name'] ?? ''
-                    : (data['coveredBy'] ?? data['covered_by'] ?? ''))
-                .toString())
+                ? data['Teacher']['name'] ?? ''
+                : (data['coveredBy'] ?? data['covered_by'] ?? ''))
+            .toString())
         : '';
-    final text = '$prefix $className — $subject${coveredBy.isNotEmpty ? ' by $coveredBy' : ''}';
+    final text =
+        '$prefix $className — $subject${coveredBy.isNotEmpty ? ' by $coveredBy' : ''}';
     return Align(
       alignment: Alignment.centerLeft,
       child: Text(text),
@@ -1770,8 +1789,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
     if (_recentDiaries.isEmpty) {
       return const Padding(
         padding: EdgeInsets.all(16),
-        child:
-            Text('No diary notes yet.', style: TextStyle(color: Colors.black54)),
+        child: Text('No diary notes yet.',
+            style: TextStyle(color: Colors.black54)),
       );
     }
     return SizedBox(
@@ -1786,11 +1805,14 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
               diary['date']?.toString() ?? diary['createdAt']?.toString() ?? '';
           return ListTile(
             onTap: () {}, // Placeholder
-            title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: Text(content, maxLines: 2, overflow: TextOverflow.ellipsis),
+            title: Text(title,
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+            subtitle:
+                Text(content, maxLines: 2, overflow: TextOverflow.ellipsis),
             trailing: SizedBox(
               width: 96,
-              child: Text(_formatRelativeTime(dateString), textAlign: TextAlign.right),
+              child: Text(_formatRelativeTime(dateString),
+                  textAlign: TextAlign.right),
             ),
           );
         },
@@ -1822,7 +1844,8 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
               child: TextButton(
                 onPressed: () => Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const TeacherCircularsScreen()),
+                  MaterialPageRoute(
+                      builder: (_) => const TeacherCircularsScreen()),
                 ),
                 child: const Text('See All'),
               ),
@@ -1844,7 +1867,9 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
       );
     }
     return Column(
-      children: _recentCirculars.map((circular) => _buildCircularListTile(circular)).toList(),
+      children: _recentCirculars
+          .map((circular) => _buildCircularListTile(circular))
+          .toList(),
     );
   }
 

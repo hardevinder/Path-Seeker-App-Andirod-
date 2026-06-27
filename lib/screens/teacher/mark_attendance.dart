@@ -13,6 +13,7 @@ import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../constants/constants.dart';
+import '../../services/api_service.dart';
 
 class Student {
   final int id;
@@ -108,7 +109,8 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
     }
   }
 
-  String _formatDate(DateTime d) => DateFormat('yyyy-MM-dd').format(_dateOnly(d));
+  String _formatDate(DateTime d) =>
+      DateFormat('yyyy-MM-dd').format(_dateOnly(d));
 
   Future<Map<String, String>> _authHeaders() async {
     final prefs = await SharedPreferences.getInstance();
@@ -130,18 +132,14 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
   }
 
   Future<void> _handleUnauthorized() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('token');
-    await prefs.remove('access_token');
-    await prefs.remove('authToken');
-    await prefs.remove('jwt');
+    await ApiService.clearLocalSession();
 
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Session expired. Please login again.')),
     );
-    Navigator.of(context).pushReplacementNamed('/login');
+    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
   }
 
   Future<void> _fetchStudents() async {
@@ -164,9 +162,7 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
 
         if (data is Map && data['students'] is List) {
           fetched.addAll(
-            (data['students'] as List)
-                .map((e) => Student.fromJson(e))
-                .toList(),
+            (data['students'] as List).map((e) => Student.fromJson(e)).toList(),
           );
         } else if (data is List) {
           fetched.addAll(
@@ -186,7 +182,8 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
       } else if (resp.statusCode == 401) {
         await _handleUnauthorized();
       } else {
-        _showError('Failed to fetch students: ${resp.statusCode} - ${resp.body}');
+        _showError(
+            'Failed to fetch students: ${resp.statusCode} - ${resp.body}');
       }
     } catch (e) {
       _showError('Error fetching students: $e');
@@ -196,7 +193,8 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
   Future<void> _fetchHolidays() async {
     try {
       final headers = await _authHeaders();
-      final resp = await http.get(Uri.parse('$baseUrl/holidays'), headers: headers);
+      final resp =
+          await http.get(Uri.parse('$baseUrl/holidays'), headers: headers);
 
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body);
@@ -425,7 +423,8 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
     return (part / total) * 100;
   }
 
-  Widget _buildSummaryCard(String title, int count, Color color, {String? subtitle}) {
+  Widget _buildSummaryCard(String title, int count, Color color,
+      {String? subtitle}) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
       child: AnimatedContainer(
@@ -450,7 +449,8 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: const TextStyle(color: Colors.white70, fontSize: 14)),
+            Text(title,
+                style: const TextStyle(color: Colors.white70, fontSize: 14)),
             const SizedBox(height: 8),
             Row(
               crossAxisAlignment: CrossAxisAlignment.end,
@@ -506,7 +506,8 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(s.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                  Text(s.name,
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
@@ -517,7 +518,8 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
                         label: Text(status.toUpperCase()),
                         selected: selected,
                         onSelected: (_) => _onStatusChange(s.id, status),
-                        selectedColor: _statusColorStr(status).withOpacity(0.95),
+                        selectedColor:
+                            _statusColorStr(status).withOpacity(0.95),
                         backgroundColor: Colors.grey.shade200,
                         labelStyle: TextStyle(
                           color: selected ? Colors.white : Colors.black87,
@@ -604,7 +606,8 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(84),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: defaultPadding, vertical: 8),
+            padding: const EdgeInsets.symmetric(
+                horizontal: defaultPadding, vertical: 8),
             child: Column(
               children: [
                 Row(
@@ -612,11 +615,13 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
                     IconButton(
                       icon: const Icon(Icons.chevron_left),
                       onPressed: () async {
-                        final d = selectedDate.subtract(const Duration(days: 1));
+                        final d =
+                            selectedDate.subtract(const Duration(days: 1));
                         setState(() {
                           selectedDate = _dateOnly(d);
                         });
-                        await _fetchAttendanceForDate(_formatDate(selectedDate));
+                        await _fetchAttendanceForDate(
+                            _formatDate(selectedDate));
                       },
                     ),
                     Expanded(
@@ -625,19 +630,23 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
                           final picked = await showDatePicker(
                             context: context,
                             initialDate: selectedDate,
-                            firstDate: DateTime.now().subtract(const Duration(days: 365)),
-                            lastDate: DateTime.now().add(const Duration(days: 365)),
+                            firstDate: DateTime.now()
+                                .subtract(const Duration(days: 365)),
+                            lastDate:
+                                DateTime.now().add(const Duration(days: 365)),
                           );
 
                           if (picked != null) {
                             setState(() {
                               selectedDate = _dateOnly(picked);
                             });
-                            await _fetchAttendanceForDate(_formatDate(selectedDate));
+                            await _fetchAttendanceForDate(
+                                _formatDate(selectedDate));
                           }
                         },
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(8),
                             color: Colors.white24,
@@ -645,7 +654,9 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              Text(formatted, style: const TextStyle(fontWeight: FontWeight.w600)),
+                              Text(formatted,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w600)),
                               Text(
                                 DateFormat.EEEE().format(selectedDate),
                                 style: const TextStyle(fontSize: 12),
@@ -662,7 +673,8 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
                         setState(() {
                           selectedDate = _dateOnly(d);
                         });
-                        await _fetchAttendanceForDate(_formatDate(selectedDate));
+                        await _fetchAttendanceForDate(
+                            _formatDate(selectedDate));
                       },
                     ),
                   ],
@@ -689,33 +701,32 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
                       : PageView.builder(
                           controller: _pageController,
                           itemCount: cardItems.length,
-                          onPageChanged: (p) => setState(() => _currentPage = p),
+                          onPageChanged: (p) =>
+                              setState(() => _currentPage = p),
                           itemBuilder: (context, idx) {
                             return cardItems[idx];
                           },
                         ),
                 ),
-
                 const SizedBox(height: 12),
-
                 if (isFuture)
                   Card(
                     color: Colors.blue.shade50,
                     child: const Padding(
                       padding: EdgeInsets.all(12),
-                      child: Text('Attendance cannot be marked for future dates.'),
+                      child:
+                          Text('Attendance cannot be marked for future dates.'),
                     ),
                   ),
-
                 if (selectedDate.weekday == DateTime.sunday)
                   Card(
                     color: Colors.yellow.shade50,
                     child: Padding(
                       padding: const EdgeInsets.all(12),
-                      child: Text("$formatted is Sunday. No attendance required."),
+                      child:
+                          Text("$formatted is Sunday. No attendance required."),
                     ),
                   ),
-
                 if (holidayForDate != null)
                   Card(
                     color: Colors.blue.shade50,
@@ -726,9 +737,7 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
                       ),
                     ),
                   ),
-
                 const SizedBox(height: 12),
-
                 Row(
                   children: [
                     Expanded(
@@ -766,9 +775,7 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
                     ),
                   ],
                 ),
-
                 const SizedBox(height: 12),
-
                 Wrap(
                   spacing: 14,
                   runSpacing: 8,
@@ -790,9 +797,7 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
                     );
                   }).toList(),
                 ),
-
                 const SizedBox(height: 12),
-
                 ListView.separated(
                   physics: const NeverScrollableScrollPhysics(),
                   shrinkWrap: true,
@@ -803,7 +808,6 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
                     return _buildStudentTile(s, i);
                   },
                 ),
-
                 const SizedBox(height: 80),
                 Center(
                   child: Text(

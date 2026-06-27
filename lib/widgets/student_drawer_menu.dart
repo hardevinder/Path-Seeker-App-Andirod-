@@ -1,18 +1,26 @@
 // lib/widgets/student_drawer_menu.dart
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
+import '../services/api_service.dart';
+import 'role_switcher.dart';
 
 class StudentDrawerMenu extends StatelessWidget {
   const StudentDrawerMenu({super.key});
 
   Future<void> _logout(BuildContext ctx) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('authToken');
-    // close drawer first
+    await ApiService.clearLocalSession();
+
+    if (!ctx.mounted) return;
+
     Navigator.of(ctx).pop();
-    // then navigate to login and remove all previous routes
     Navigator.of(ctx).pushNamedAndRemoveUntil('/login', (route) => false);
-    ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('👋 Logged out successfully')));
+    ScaffoldMessenger.of(ctx).clearSnackBars();
+    ScaffoldMessenger.of(ctx).showSnackBar(
+      const SnackBar(
+        content: Text('👋 Logged out successfully'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   Widget _leadingIcon(IconData icon, Color color) {
@@ -20,9 +28,17 @@ class StudentDrawerMenu extends StatelessWidget {
       width: 44,
       height: 44,
       decoration: BoxDecoration(
-        gradient: LinearGradient(colors: [color.withOpacity(0.95), color.withOpacity(0.7)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+        gradient: LinearGradient(
+            colors: [color.withOpacity(0.95), color.withOpacity(0.7)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight),
         borderRadius: BorderRadius.circular(10),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 6, offset: const Offset(0, 3))],
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 6,
+              offset: const Offset(0, 3))
+        ],
       ),
       child: Icon(icon, color: Colors.white, size: 22),
     );
@@ -44,15 +60,26 @@ class StudentDrawerMenu extends StatelessWidget {
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       leading: _leadingIcon(icon, color),
-      title: Text(title, style: TextStyle(fontWeight: FontWeight.w700, color: selected ? Colors.deepPurple : Colors.black87)),
-      subtitle: subtitle == null ? null : Text(subtitle, style: const TextStyle(fontSize: 12)),
-      trailing: selected ? const Icon(Icons.check_circle, color: Colors.deepPurple) : const Icon(Icons.chevron_right_rounded),
+      title: Text(title,
+          style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: selected ? Colors.deepPurple : Colors.black87)),
+      subtitle: subtitle == null
+          ? null
+          : Text(subtitle, style: const TextStyle(fontSize: 12)),
+      trailing: selected
+          ? const Icon(Icons.check_circle, color: Colors.deepPurple)
+          : const Icon(Icons.chevron_right_rounded),
       tileColor: selected ? Colors.deepPurple.withOpacity(0.06) : null,
       onTap: () {
+        if (extraAction != null) {
+          extraAction();
+          return;
+        }
         Navigator.of(context).pop(); // close drawer first
-        if (extraAction != null) extraAction();
         if (replaceAll) {
-          Navigator.of(context).pushNamedAndRemoveUntil(routeName, (route) => false);
+          Navigator.of(context)
+              .pushNamedAndRemoveUntil(routeName, (route) => false);
         } else {
           // avoid pushing same route again
           if (current != routeName) Navigator.of(context).pushNamed(routeName);
@@ -94,9 +121,15 @@ class StudentDrawerMenu extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: const [
-                        Text(studentName, style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
+                        Text(studentName,
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800)),
                         SizedBox(height: 6),
-                        Text(studentEmail, style: TextStyle(color: Colors.white70, fontSize: 13)),
+                        Text(studentEmail,
+                            style:
+                                TextStyle(color: Colors.white70, fontSize: 13)),
                       ],
                     ),
                   ),
@@ -118,6 +151,14 @@ class StudentDrawerMenu extends StatelessWidget {
                   title: 'Dashboard',
                   color: const Color(0xFF00C6FF),
                   replaceAll: true,
+                ),
+                _tile(
+                  context: context,
+                  routeName: '/choose-role',
+                  icon: Icons.switch_account_rounded,
+                  title: 'Switch Role',
+                  color: const Color(0xFF111827),
+                  extraAction: () => RoleSwitcher.show(context),
                 ),
                 _tile(
                   context: context,
@@ -162,12 +203,12 @@ class StudentDrawerMenu extends StatelessWidget {
                   title: 'Leave Requests',
                   color: const Color(0xFF4A90E2),
                 ),
-
                 const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Text('Quick actions', style: TextStyle(fontWeight: FontWeight.w800, color: Colors.black54)),
+                  child: Text('Quick actions',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w800, color: Colors.black54)),
                 ),
-
                 _tile(
                   context: context,
                   routeName: '/notifications',
@@ -176,7 +217,6 @@ class StudentDrawerMenu extends StatelessWidget {
                   color: const Color(0xFF00BFA6),
                   subtitle: 'Unread alerts',
                 ),
-
                 _tile(
                   context: context,
                   routeName: '/profile',
@@ -184,7 +224,6 @@ class StudentDrawerMenu extends StatelessWidget {
                   title: 'Profile',
                   color: const Color(0xFF7ED957),
                 ),
-
                 _tile(
                   context: context,
                   routeName: '/settings',
@@ -192,7 +231,6 @@ class StudentDrawerMenu extends StatelessWidget {
                   title: 'Settings',
                   color: const Color(0xFF9C27B0),
                 ),
-
                 _tile(
                   context: context,
                   routeName: '/help',
@@ -200,7 +238,6 @@ class StudentDrawerMenu extends StatelessWidget {
                   title: 'Help & Support',
                   color: const Color(0xFF4A90E2),
                 ),
-
                 const SizedBox(height: 8),
               ],
             ),
@@ -216,7 +253,8 @@ class StudentDrawerMenu extends StatelessWidget {
                     onPressed: () => _logout(context),
                     icon: const Icon(Icons.logout_rounded),
                     label: const Text('Logout'),
-                    style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),
+                    style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12)),
                   ),
                 ),
               ],
@@ -224,7 +262,8 @@ class StudentDrawerMenu extends StatelessWidget {
           ),
           Padding(
             padding: const EdgeInsets.only(bottom: 12, left: 16, right: 16),
-            child: Text('App version 1.0.0', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+            child: Text('App version 1.0.0',
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
           ),
         ],
       ),
