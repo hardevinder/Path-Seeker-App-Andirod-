@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_file_dialog/flutter_file_dialog.dart';
@@ -1538,7 +1537,11 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
         totalDue = 0,
         totalReceived = 0,
         totalConcession = 0,
-        totalFineRemaining = 0;
+        totalFineRemaining = 0,
+        headVanCost = 0,
+        headVanReceived = 0,
+        headVanConcession = 0,
+        headVanDue = 0;
 
     final fees = (studentDetails?['feeDetails'] as List?) ?? [];
     for (final f0 in fees) {
@@ -1551,6 +1554,14 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
       totalReceived += _num(f['totalFeeReceived']);
       totalConcession += _num(f['totalConcessionReceived']);
       totalFineRemaining += _feeFineDue(f);
+
+      final t = getTransportBreakdown(f);
+      if (t != null) {
+        headVanCost += _num(t['cost']);
+        headVanReceived += _num(t['received']);
+        headVanConcession += _num(t['concession']);
+        headVanDue += _num(t['pending']);
+      }
     }
 
     final van = (studentDetails?['vanFee'] is Map)
@@ -1560,6 +1571,10 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
     final vanCost = _num(van['perHeadTotalDue'] ?? van['transportCost']);
     final vanReceived = _num(van['totalVanFeeReceived']);
     final vanConcession = _num(van['totalVanFeeConcession']);
+    final globalVanDue =
+        (vanCost - (vanReceived + vanConcession)).clamp(0, double.infinity);
+    final hasHeadTransport =
+        headVanCost > 0 || headVanReceived > 0 || headVanConcession > 0;
 
     return {
       'original': totalOriginal,
@@ -1569,11 +1584,10 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
       'concession': totalConcession,
       'fineRemaining': totalFineRemaining,
       'prevBalanceDue': _prevBalanceDue,
-      'vanCost': vanCost,
-      'vanReceived': vanReceived,
-      'vanConcession': vanConcession,
-      'vanDue':
-          (vanCost - (vanReceived + vanConcession)).clamp(0, double.infinity),
+      'vanCost': hasHeadTransport ? headVanCost : vanCost,
+      'vanReceived': hasHeadTransport ? headVanReceived : vanReceived,
+      'vanConcession': hasHeadTransport ? headVanConcession : vanConcession,
+      'vanDue': hasHeadTransport ? headVanDue : globalVanDue.toDouble(),
     };
   }
 
@@ -1602,118 +1616,155 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
     final fees = (studentDetails?['feeDetails'] as List?) ?? [];
     if (fees.isEmpty) {
       return const SizedBox(
-          height: 220, child: Center(child: Text('No data for chart')));
+          height: 160, child: Center(child: Text('No fee heads available')));
     }
 
-    final List<PieChartSectionData> sections = [];
-    final colors = [
-      Colors.blue.shade400,
-      Colors.green.shade400,
-      Colors.orange.shade400,
-      Colors.purple.shade400,
-      Colors.red.shade400,
-      Colors.teal.shade400,
-      Colors.indigo.shade400,
-      Colors.cyan.shade400,
-    ];
-
-    int colorIndex = 0;
+    final rows = <Map<String, dynamic>>[];
     for (int i = 0; i < fees.length; i++) {
       final f0 = fees[i];
       if (f0 is! Map) continue;
       final f = Map<String, dynamic>.from(f0);
+      final academicDue = _num(f['finalAmountDue']);
+      final fineDue = _feeFineDue(f);
+      final transportDue = _num(getTransportBreakdown(f)?['pending']);
+      final totalDue = academicDue + fineDue + transportDue;
+      final effective = _num(f['effectiveFeeDue']);
+      final received = _num(f['totalFeeReceived']);
+      final concession = _num(f['totalConcessionReceived']);
+      final paidPct = effective > 0
+          ? ((received + concession) / effective * 100).clamp(0, 100)
+          : (totalDue <= 0 ? 100.0 : 0.0);
 
-      final val = _num(f['effectiveFeeDue']);
-      if (val <= 0) continue;
-
-      final title = (f['fee_heading'] ?? '').toString();
-      final color = colors[colorIndex % colors.length];
-      colorIndex++;
-
-      sections.add(
-        PieChartSectionData(
-          value: val,
-          color: color,
-          title:
-              '${title.length > 14 ? title.substring(0, 14) : title}\n${NumberFormat.compactCurrency(locale: 'en_IN', symbol: '₹').format(val)}',
-          radius: 74,
-          titleStyle: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-      );
+      rows.add({
+        'title': (f['fee_heading'] ?? 'Fee Head').toString(),
+        'academicDue': academicDue,
+        'fineDue': fineDue,
+        'transportDue': transportDue,
+        'totalDue': totalDue,
+        'paidPct': paidPct.toDouble(),
+      });
     }
 
-    if (sections.isEmpty) {
+    rows.sort((a, b) => _num(b['totalDue']).compareTo(_num(a['totalDue'])));
+
+    if (rows.isEmpty) {
       return const SizedBox(
-          height: 220, child: Center(child: Text('No positive values')));
+          height: 160, child: Center(child: Text('No fee head values')));
     }
 
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: SizedBox(
-          height: 320,
-          child: PieChart(
-            PieChartData(
-              sections: sections,
-              centerSpaceRadius: 46,
-              sectionsSpace: 4,
-              pieTouchData: PieTouchData(enabled: true),
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _sectionTitle('Fee Head Breakdown'),
+            const SizedBox(height: 6),
+            const Text(
+              'Sorted by pending amount, including fine and transport.',
+              style: TextStyle(
+                color: Colors.black54,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          ),
+            const SizedBox(height: 12),
+            ...rows.map((row) => _feeHeadDueBar(row)),
+          ],
         ),
       ),
     );
   }
 
-  List<PieChartSectionData> _makePieSections(Map<String, double> totals) {
-    final vals = [
-      totals['due'] ?? 0,
-      totals['received'] ?? 0,
-      totals['concession'] ?? 0,
-      totals['fineRemaining'] ?? 0,
-      totals['vanDue'] ?? 0,
-    ];
-    final colors = [
-      Colors.red.shade400,
-      Colors.blue.shade400,
-      Colors.amber.shade600,
-      Colors.orange.shade500,
-      Colors.green.shade400,
-    ];
+  Widget _feeHeadDueBar(Map<String, dynamic> row) {
+    final totalDue = _num(row['totalDue']);
+    final paidPct = _num(row['paidPct']).clamp(0, 100).toDouble();
+    final hasTransport = _num(row['transportDue']) > 0;
+    final color = totalDue > 0 ? Colors.red.shade600 : Colors.green.shade600;
 
-    final List<PieChartSectionData> list = [];
-    for (int i = 0; i < vals.length; i++) {
-      final v = vals[i];
-      if (v <= 0) {
-        list.add(PieChartSectionData(
-          value: 0.0001,
-          color: colors[i],
-          showTitle: false,
-          radius: 40,
-        ));
-      } else {
-        list.add(
-          PieChartSectionData(
-            value: v,
-            color: colors[i],
-            title: formatINR(v),
-            radius: 52,
-            titleStyle: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.black.withOpacity(0.07)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  (row['title'] ?? 'Fee Head').toString(),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                totalDue > 0 ? formatINR(totalDue) : 'Clear',
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: paidPct / 100,
+              minHeight: 8,
+              color: totalDue > 0 ? _indigo : _emerald,
+              backgroundColor: Colors.black.withOpacity(0.06),
             ),
           ),
-        );
-      }
-    }
-    return list;
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _compactAmountChip('Academic', row['academicDue']),
+              _compactAmountChip('Fine', row['fineDue']),
+              if (hasTransport)
+                _compactAmountChip('Transport', row['transportDue']),
+              _compactAmountChip('Paid', '$paidPct%'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _compactAmountChip(String label, dynamic value) {
+    final text = value is String ? value : formatINR(value);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.black.withOpacity(0.08)),
+      ),
+      child: Text(
+        '$label: $text',
+        style: const TextStyle(
+          color: Colors.black87,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
   }
 
   List<Map<String, dynamic>> _kpiItemsForTotals(Map<String, double> totals) {
@@ -2447,8 +2498,8 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
                               ),
                             ),
                             const SizedBox(width: 10),
-                            if (academicDue + fineDue > 0)
-                              _pill('Due', formatINR(academicDue + fineDue),
+                            if (totalInclVanFine > 0)
+                              _pill('Due', formatINR(totalInclVanFine),
                                   bg: Colors.red.shade50,
                                   fg: Colors.red.shade700)
                             else
@@ -2909,22 +2960,109 @@ class _StudentFeeScreenState extends State<StudentFeeScreen>
 
   Widget _overallPie() {
     final totals = _calcTotals();
-    final sections = _makePieSections(totals);
+    final payable = _calcPayableSummary();
+    final rows = [
+      {
+        'label': 'Academic Due',
+        'value': payable['academicDue'] ?? 0.0,
+        'color': Colors.red.shade500,
+      },
+      {
+        'label': 'Fine Due',
+        'value': payable['fineDue'] ?? 0.0,
+        'color': Colors.orange.shade600,
+      },
+      {
+        'label': 'Transport Due',
+        'value': payable['vanDue'] ?? 0.0,
+        'color': Colors.teal.shade600,
+      },
+      {
+        'label': 'Previous Balance',
+        'value': payable['prevBalanceDue'] ?? 0.0,
+        'color': Colors.purple.shade500,
+      },
+      {
+        'label': 'Received',
+        'value': totals['received'] ?? 0.0,
+        'color': Colors.blue.shade600,
+      },
+      {
+        'label': 'Concession',
+        'value': totals['concession'] ?? 0.0,
+        'color': Colors.green.shade600,
+      },
+    ];
+    final maxValue = rows.fold<double>(
+      0,
+      (max, row) => _num(row['value']) > max ? _num(row['value']) : max,
+    );
+
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: SizedBox(
-          height: 320,
-          child: PieChart(
-            PieChartData(
-              sections: sections,
-              centerSpaceRadius: 46,
-              sectionsSpace: 2,
-              pieTouchData: PieTouchData(enabled: true),
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _sectionTitle('Payable Breakdown'),
+            const SizedBox(height: 6),
+            const Text(
+              'A clearer summary than a pie chart, especially with more fee items.',
+              style: TextStyle(
+                color: Colors.black54,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          ),
+            const SizedBox(height: 14),
+            ...rows.map((row) {
+              final value = _num(row['value']);
+              final pct = maxValue <= 0 ? 0.0 : (value / maxValue);
+              final color = row['color'] as Color;
+
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            (row['label'] ?? '').toString(),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.black87,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          formatINR(value),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: value > 0 ? color : Colors.black45,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 7),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        minHeight: 9,
+                        value: pct.clamp(0, 1),
+                        color: value > 0 ? color : Colors.black26,
+                        backgroundColor: Colors.black.withOpacity(0.06),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
         ),
       ),
     );
