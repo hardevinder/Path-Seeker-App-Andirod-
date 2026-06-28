@@ -80,6 +80,13 @@ class HrDashboardScreen extends StatelessWidget {
           routeName: '/hr/attendance-calendar',
         ),
         AdminAction(
+          title: 'Academic Calendar',
+          subtitle: 'School holidays, exams and event calendar',
+          icon: Icons.calendar_month_rounded,
+          color: Color(0xFF2563EB),
+          routeName: '/hr/academic-calendar',
+        ),
+        AdminAction(
           title: 'Messages',
           subtitle: 'Staff reminders and conversations',
           icon: Icons.chat_bubble_rounded,

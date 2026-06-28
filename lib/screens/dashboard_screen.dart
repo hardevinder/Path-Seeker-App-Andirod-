@@ -1923,6 +1923,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
         'route': '/assignments',
         'badge': '$assignOverdue',
       },
+      if (!isTeacher)
+        {
+          'label': 'Lesson Plans',
+          'icon': Icons.auto_stories_rounded,
+          'route': '/student/lesson-plans',
+          'badge': 'Open',
+        },
       {
         'label': 'Diary',
         'icon': Icons.menu_book_rounded,

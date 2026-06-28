@@ -169,6 +169,14 @@ class StudentDrawerMenu extends StatelessWidget {
                 ),
                 _tile(
                   context: context,
+                  routeName: '/student/lesson-plans',
+                  icon: Icons.auto_stories_rounded,
+                  title: 'Lesson Plans',
+                  color: const Color(0xFF4F46E5),
+                  subtitle: 'Published weekly plans',
+                ),
+                _tile(
+                  context: context,
                   routeName: '/timetable',
                   icon: Icons.calendar_today_rounded,
                   title: 'Time Table',

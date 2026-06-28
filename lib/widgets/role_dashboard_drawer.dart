@@ -212,6 +212,11 @@ class RoleDashboardDrawer extends StatelessWidget {
             'route': '/hr/attendance-calendar',
           },
           {
+            'icon': Icons.calendar_month_rounded,
+            'title': 'Academic Calendar',
+            'route': '/hr/academic-calendar',
+          },
+          {
             'icon': Icons.chat_bubble_rounded,
             'title': 'Messages',
             'route': '/hr/messages',

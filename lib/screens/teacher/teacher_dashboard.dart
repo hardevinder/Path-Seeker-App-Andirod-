@@ -1122,6 +1122,11 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
         'route': '/view-circulars'
       },
       {
+        'label': 'Academic Calendar',
+        'icon': Icons.calendar_month_rounded,
+        'route': '/teacher/academic-calendar'
+      },
+      {
         'label': 'Manage Leave Requests',
         'icon': Icons.beach_access,
         'route': '/teacher/leave-requests'

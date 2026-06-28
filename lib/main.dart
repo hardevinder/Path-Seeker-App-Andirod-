@@ -40,6 +40,7 @@ import 'screens/student_circulars_screen.dart';
 import 'screens/leave_page.dart';
 import 'screens/student_diary_screen.dart';
 import 'screens/student_messages_screen.dart';
+import 'screens/student_lesson_plans_screen.dart';
 
 // teacher screens
 import 'screens/teacher/teacher_dashboard.dart';
@@ -75,6 +76,7 @@ import 'screens/superadmin/superadmin_transactions_screen.dart';
 import 'screens/hr/employee_management_screen.dart';
 import 'screens/hr/leave_attendance_screen.dart';
 import 'screens/hr/onboarding_screen.dart';
+import 'screens/hr/employee_leave_requests_screen.dart';
 
 // Transport sub-pages
 import 'screens/transport/routes_screen.dart';
@@ -359,7 +361,7 @@ class StudentApp extends StatelessWidget {
           '/hr/employees': (context) => const HrEmployeeManagementScreen(),
           '/hr/leave-attendance': (context) => const HrLeaveAttendanceScreen(),
           '/hr/onboarding': (context) => const HrOnboardingScreen(),
-          '/hr/leave-requests': (context) => const HrLeaveRequestsScreen(),
+          '/hr/leave-requests': (context) => const HrEmployeeLeaveRequestsScreen(),
           '/hr/attendance-calendar': (context) =>
               const HrAttendanceCalendarScreen(),
           '/hr/departments': (context) => const HrDepartmentsScreen(),
@@ -442,6 +444,8 @@ class StudentApp extends StatelessWidget {
           '/fee-details': (context) => const StudentFeeScreen(),
           '/fees': (context) => const StudentFeeScreen(),
           '/assignments': (context) => const StudentAssignmentsScreen(),
+          '/student/lesson-plans': (context) => const StudentLessonPlansScreen(),
+          '/student-lesson-plans': (context) => const StudentLessonPlansScreen(),
           '/timetable': (context) => const StudentTimetableScreen(),
           '/attendance': (context) => const StudentAttendanceScreen(),
           '/circulars': (context) => const StudentCircularsScreen(),

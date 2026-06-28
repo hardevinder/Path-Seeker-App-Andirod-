@@ -261,6 +261,14 @@ class TeacherDrawerMenu extends StatelessWidget {
                     title: 'Academic Calendar',
                     color: const Color(0xFF1D4ED8),
                   ),
+                if (!isCoordinatorDrawer)
+                  _tile(
+                    context: context,
+                    routeName: '/teacher/academic-calendar',
+                    icon: Icons.calendar_month_rounded,
+                    title: 'Academic Calendar',
+                    color: const Color(0xFF1D4ED8),
+                  ),
                 _tile(
                   context: context,
                   routeName: timetableRoute,
