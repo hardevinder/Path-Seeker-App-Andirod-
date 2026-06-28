@@ -102,14 +102,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   // -------------------- Theme Tokens --------------------
-  static const Color kAccent = Color(0xFF5B5FEF);
-  static const Color kAccent2 = Color(0xFF8B5CF6);
-  static const Color kBgTop = Color(0xFFF8FAFF);
-  static const Color kBgBottom = Color(0xFFF1F5FF);
+  static const Color kAccent = Color(0xFF1D4ED8);
+  static const Color kAccent2 = Color(0xFF0F766E);
+  static const Color kBgTop = Color(0xFFF7F9FC);
+  static const Color kBgBottom = Color(0xFFEFF4FA);
   static const Color kCard = Colors.white;
   static const Color kText = Color(0xFF111827);
   static const Color kMuted = Color(0xFF6B7280);
-  static const Color kSoftBorder = Color(0xFFE8ECF5);
+  static const Color kSoftBorder = Color(0xFFE3E9F2);
   static const Color kGreen = Color(0xFF0F9D58);
   static const Color kOrange = Color(0xFFF59E0B);
   static const Color kRed = Color(0xFFEF4444);
@@ -795,6 +795,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   _studentProfileCard(),
                   const SizedBox(height: 14),
                 ],
+                _dashboardSectionHeader(
+                  title: 'Academic Overview',
+                  subtitle: 'Attendance, work, dues and messages',
+                ),
+                const SizedBox(height: 10),
                 _overviewStatsGrid(),
                 const SizedBox(height: 14),
                 _slidesPanel(presencePct()),
@@ -903,21 +908,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final initials = _initialsFor(studentName ?? username);
     final name = _displayName();
     final subtitle = isTeacher ? 'Teacher Dashboard' : _classSectionText();
+    final todayLabel = DateFormat('EEE, d MMM').format(DateTime.now());
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [kAccent, kAccent2],
+          colors: [Color(0xFF0F172A), kAccent, kAccent2],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
+          stops: [0.0, 0.58, 1.0],
         ),
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: kAccent.withOpacity(0.25),
-            blurRadius: 22,
-            offset: const Offset(0, 12),
+            color: kAccent.withOpacity(0.22),
+            blurRadius: 24,
+            offset: const Offset(0, 14),
           ),
         ],
       ),
@@ -933,15 +940,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Welcome back,',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.82),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            'Welcome back',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.80),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        _heroDateBadge(todayLabel),
+                      ],
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 5),
                     Text(
                       name,
                       maxLines: 1,
@@ -1004,6 +1021,161 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     label: 'Blood',
                     value: bloodGroup!.trim(),
                   ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          _heroFocusPanel(),
+        ],
+      ),
+    );
+  }
+
+  Widget _heroDateBadge(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withOpacity(0.18)),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+
+  Widget _heroFocusPanel() {
+    final attendance = presencePct().clamp(0, 100);
+    final next = _nextPeriodText();
+    final moneyText = feeTotalDue > 0
+        ? currencyFormat.format(feeTotalDue)
+        : isTeacher
+            ? 'On track'
+            : 'No dues';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.13),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.18)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              _heroMiniMetric(
+                icon: Icons.schedule_rounded,
+                label: 'Today',
+                value: next,
+              ),
+              Container(
+                width: 1,
+                height: 34,
+                margin: const EdgeInsets.symmetric(horizontal: 10),
+                color: Colors.white.withOpacity(0.18),
+              ),
+              _heroMiniMetric(
+                icon: isTeacher
+                    ? Icons.fact_check_outlined
+                    : Icons.account_balance_wallet_outlined,
+                label: isTeacher ? 'Status' : 'Fees',
+                value: moneyText,
+              ),
+            ],
+          ),
+          if (!isTeacher) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Text(
+                  'Attendance',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: LinearProgressIndicator(
+                      minHeight: 7,
+                      value: attendance / 100,
+                      backgroundColor: Colors.white.withOpacity(0.18),
+                      valueColor:
+                          const AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  '$attendance%',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _heroMiniMetric({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Expanded(
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.16),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: Colors.white, size: 18),
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.72),
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
               ],
             ),
           ),
@@ -2577,6 +2749,68 @@ class _DashboardScreenState extends State<DashboardScreen> {
           fontSize: 15,
           fontWeight: FontWeight.w900,
         ),
+      ),
+    );
+  }
+
+  Widget _dashboardSectionHeader({
+    required String title,
+    required String subtitle,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: kText,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: kMuted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: kSoftBorder),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.insights_rounded, color: kAccent, size: 15),
+                const SizedBox(width: 5),
+                const Text(
+                  'Live data',
+                  style: TextStyle(
+                    color: kText,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
