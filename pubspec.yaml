@@ -2,10 +2,10 @@ name: studentapp_new
 description: "Smart Student Management App (Flutter)"
 publish_to: "none"
 
-# ✅ UPDATED for Play Store release
-# versionName = 1.0.7
-# versionCode = 50
-version: 1.0.7+55
+# UPDATED for Play Store release
+# versionName = 1.0.35
+# versionCode = 57
+version: 1.0.35+57
 
 environment:
   sdk: ">=3.4.1 <4.0.0"
@@ -100,3 +100,8 @@ flutter_icons:
   image_path: "assets/icon/icon.png"
   adaptive_icon_background: "#FFFFFF"
   adaptive_icon_foreground: "assets/icon/icon.png"
+
+dependency_overrides:
+  image_picker_android: 0.8.12+23
+  shared_preferences_android: 2.4.10
+  url_launcher_android: 6.3.16

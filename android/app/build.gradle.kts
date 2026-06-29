@@ -27,12 +27,12 @@ android {
     defaultConfig {
         applicationId = "com.pathseeker.international"
 
-        // ✅ HyperSDK works fine on 21+, you are on 24 which is ok
-        minSdk = 24
+        // Keep Play Store device support aligned with previous releases.
+        minSdk = 20 + 1
         targetSdk = 36
 
-        versionCode = 48
-        versionName = "1.0.33"
+        versionCode = 57
+        versionName = "1.0.35"
 
         multiDexEnabled = true
 
