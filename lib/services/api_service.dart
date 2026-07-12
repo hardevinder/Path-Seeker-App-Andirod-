@@ -191,6 +191,32 @@ class ApiService {
     return resp;
   }
 
+  static Future<http.Response> rawPatch(
+    String endpoint,
+    Map<String, dynamic> body, {
+    Map<String, String>? extraHeaders,
+  }) async {
+    final uri = Uri.parse('$baseUrl$endpoint');
+
+    final headers = await _buildHeaders({
+      'Content-Type': 'application/json',
+      if (extraHeaders != null) ...extraHeaders,
+    });
+
+    final resp = await http
+        .patch(
+          uri,
+          headers: headers,
+          body: jsonEncode(body),
+        )
+        .timeout(_timeout);
+
+    // ignore: avoid_print
+    print('[ApiService] PATCH $uri → ${resp.statusCode}');
+
+    return resp;
+  }
+
   static Future<http.Response> rawDelete(
     String endpoint, {
     Map<String, String>? extraHeaders,

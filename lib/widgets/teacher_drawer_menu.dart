@@ -365,6 +365,14 @@ class TeacherDrawerMenu extends StatelessWidget {
                 ),
                 _tile(
                   context: context,
+                  routeName: '/teacher/library',
+                  icon: Icons.local_library_rounded,
+                  title: 'Library',
+                  color: const Color(0xFF1D4ED8),
+                  subtitle: 'Issued books & dues',
+                ),
+                _tile(
+                  context: context,
                   routeName: '/my-attendance-calendar',
                   icon: Icons.calendar_today,
                   title: 'My Attendance',

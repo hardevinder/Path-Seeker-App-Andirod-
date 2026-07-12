@@ -1,4 +1,4 @@
-package com.pathseeker.international
+package com.smcis.app
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 

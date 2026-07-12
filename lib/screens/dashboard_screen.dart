@@ -768,7 +768,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       appBar: StudentAppBar(
         parentContext: context,
         scaffoldKey: _scaffoldKey,
-        title: 'Pathseekers',
+        title: 'SMCIS',
       ),
       drawer: StudentDrawerMenu(),
       body: Container(

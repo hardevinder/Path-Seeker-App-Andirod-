@@ -27,7 +27,7 @@ class _LoginScreenState extends State<LoginScreen> {
   String errorMessage = '';
 
   final String backgroundAsset = 'assets/Tips_Background.png';
-  final String logoAsset = 'assets/tpis_logo.png';
+  final String logoAsset = 'assets/logo.png';
 
   String get apiBase => baseUrl;
 
@@ -130,13 +130,15 @@ class _LoginScreenState extends State<LoginScreen> {
                       ? Icons.people_rounded
                       : normalized == AppRoles.transport
                           ? Icons.directions_bus_rounded
-                          : normalized == AppRoles.examination
-                              ? Icons.school
-                              : normalized == AppRoles.coordinator
-                                  ? Icons.manage_accounts_rounded
-                                  : normalized == AppRoles.teacher
-                                      ? Icons.school
-                                      : Icons.person;
+                          : normalized == AppRoles.driver
+                              ? Icons.drive_eta_rounded
+                              : normalized == AppRoles.examination
+                                  ? Icons.school
+                                  : normalized == AppRoles.coordinator
+                                      ? Icons.manage_accounts_rounded
+                                      : normalized == AppRoles.teacher
+                                          ? Icons.school
+                                          : Icons.person;
 
               return ListTile(
                 contentPadding: EdgeInsets.zero,
@@ -244,6 +246,7 @@ class _LoginScreenState extends State<LoginScreen> {
           "academic_coordinator",
           "teacher",
           "student",
+          "driver",
         ];
 
         final roles = AppRoles.extractRoles(data, user);
@@ -334,24 +337,49 @@ class _LoginScreenState extends State<LoginScreen> {
           await prefs.setString('teacherId', teacherId.toString());
         }
 
-        // Save FCM token to server.
+        // Register this installation after authentication. Notification setup
+        // runs before login, when no bearer token exists, so this post-login
+        // sync is required for first-time users and fresh installations.
         try {
           final fcmToken = await FirebaseMessaging.instance.getToken();
 
           if (fcmToken != null && fcmToken.trim().isNotEmpty) {
-            await http.post(
-              Uri.parse('$apiBase/users/save-token'),
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer $token',
-              },
-              body: jsonEncode({
-                'username': username,
-                'token': fcmToken,
-              }),
-            );
+            await prefs.setString('fcmToken', fcmToken);
+
+            final cleanBase = apiBase.replaceAll(RegExp(r'/+$'), '');
+            final registerResponse = await http
+                .post(
+                  Uri.parse('$cleanBase/api/notifications/register-device'),
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'Authorization': 'Bearer $token',
+                  },
+                  body: jsonEncode({
+                    'token': fcmToken,
+                    'platform': Platform.isAndroid ? 'android' : 'ios',
+                    'deviceName':
+                        Platform.isAndroid ? 'SMCIS Android' : 'SMCIS iOS',
+                    'systemVersion': Platform.operatingSystemVersion,
+                  }),
+                )
+                .timeout(const Duration(seconds: 20));
+
+            final registered = registerResponse.statusCode >= 200 &&
+                registerResponse.statusCode < 300;
+            await prefs.setBool('fcmTokenSynced', registered);
+
+            if (registered) {
+              debugPrint('FCM device registered after login.');
+            } else {
+              debugPrint(
+                'FCM device registration failed: '
+                '${registerResponse.statusCode} ${registerResponse.body}',
+              );
+            }
           }
         } catch (e) {
+          await prefs.setBool('fcmTokenSynced', false);
           debugPrint('FCM save failed: $e');
         }
 
@@ -366,7 +394,7 @@ class _LoginScreenState extends State<LoginScreen> {
         } else {
           await _clearLocalSession(prefs);
           _showError(
-            'This app currently supports Student, Teacher, and Coordinator login. '
+            'This app does not currently support '
             'Please use the web portal for ${activeRole.toUpperCase()} access.',
           );
         }
@@ -541,7 +569,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   // Title
                   const Text(
-                    "TPIS",
+                    "SMCIS",
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 40,
@@ -700,7 +728,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 28),
 
                   const Text(
-                    "© 2025 The Pathseekers International School",
+                    "© 2025 Seth Malook Chand International School",
                     style: TextStyle(
                       color: Colors.white60,
                       fontSize: 12,

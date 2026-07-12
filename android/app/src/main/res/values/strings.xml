@@ -2,7 +2,7 @@
 <resources>
 
     <!-- App name -->
-    <string name="app_name">TPIS</string>
+    <string name="app_name">SMCIS</string>
 
     <!-- ✅ HDFC / Juspay HyperSDK Client ID -->
     <string name="juspay_client_id">hdfcmaster</string>

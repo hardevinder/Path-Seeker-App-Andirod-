@@ -119,7 +119,7 @@ class TeacherAppBar extends StatelessWidget implements PreferredSizeWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           const Text(
-            'The Pathseekers International School',
+            'Seth Malook Chand International School',
             style: TextStyle(
               color: Colors.white,
               fontSize: 17,

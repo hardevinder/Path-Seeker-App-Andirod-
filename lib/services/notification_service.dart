@@ -11,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../firebase_options.dart';
 import '../main.dart'; // navigatorKey
+import '../screens/student/student_bus_live_screen.dart';
 
 class NotificationService {
   static bool _firebaseEnsured = false;
@@ -183,6 +184,22 @@ class NotificationService {
     final diaryId = (data['diaryId'] ?? '').toString();
     final circularId = (data['circularId'] ?? '').toString();
     final paymentLink = (data['paymentLink'] ?? '').toString();
+
+    final normalizedScreen =
+        screen.toLowerCase().replaceAll(RegExp(r'[_ -]'), '');
+    final type = (data['type'] ?? data['notification_type'] ?? '')
+        .toString()
+        .toLowerCase();
+    if (normalizedScreen == 'studentbuslive' ||
+        normalizedScreen == 'bustracking' ||
+        normalizedScreen == 'studentbustracking' ||
+        type == 'bus_approaching' ||
+        type == 'busapproaching') {
+      navigatorKey.currentState?.push(
+        MaterialPageRoute(builder: (_) => const StudentBusLiveScreen()),
+      );
+      return;
+    }
 
     if (screen == 'DiaryScreen' && diaryId.isNotEmpty) {
       navigatorKey.currentState?.pushNamed('/diary', arguments: diaryId);

@@ -169,11 +169,27 @@ class StudentDrawerMenu extends StatelessWidget {
                 ),
                 _tile(
                   context: context,
+                  routeName: '/student/bus-live',
+                  icon: Icons.directions_bus_rounded,
+                  title: 'My Bus Live',
+                  color: const Color(0xFF16A34A),
+                  subtitle: 'Track your assigned school bus',
+                ),
+                _tile(
+                  context: context,
                   routeName: '/student/lesson-plans',
                   icon: Icons.auto_stories_rounded,
                   title: 'Lesson Plans',
                   color: const Color(0xFF4F46E5),
                   subtitle: 'Published weekly plans',
+                ),
+                _tile(
+                  context: context,
+                  routeName: '/student/library',
+                  icon: Icons.local_library_rounded,
+                  title: 'Library',
+                  color: const Color(0xFF1D4ED8),
+                  subtitle: 'Issued books & dues',
                 ),
                 _tile(
                   context: context,

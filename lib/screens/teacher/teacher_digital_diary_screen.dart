@@ -7,6 +7,8 @@ import 'dart:typed_data';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:google_mlkit_document_scanner/google_mlkit_document_scanner.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:intl/intl.dart';
@@ -263,7 +265,6 @@ class _DiaryFeedTabState extends State<_DiaryFeedTab> {
     }
   }
 
-
   String _safe(dynamic v) => v?.toString() ?? '';
 
   Future<List<Map<String, dynamic>>> _fetchAcknowledgements(int diaryId) async {
@@ -299,7 +300,8 @@ class _DiaryFeedTabState extends State<_DiaryFeedTab> {
     final detailRes = await http.get(detailUri, headers: detailHeaders);
 
     if (detailRes.statusCode != 200) {
-      throw Exception('Failed to load acknowledgements (${detailRes.statusCode})');
+      throw Exception(
+          'Failed to load acknowledgements (${detailRes.statusCode})');
     }
 
     final body = jsonDecode(detailRes.body);
@@ -632,8 +634,7 @@ class _DiaryFeedTabState extends State<_DiaryFeedTab> {
                               ? DateFormat('dd MMM yyyy')
                                   .format(DateTime.parse(d['date']))
                               : '';
-                          final attachments =
-                              List<Map<String, dynamic>>.from(
+                          final attachments = List<Map<String, dynamic>>.from(
                             d['attachments'] ?? [],
                           );
 
@@ -677,7 +678,8 @@ class _DiaryFeedTabState extends State<_DiaryFeedTab> {
                                   Wrap(
                                     spacing: 8,
                                     runSpacing: 6,
-                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
                                     children: [
                                       if (attachments.isNotEmpty)
                                         TextButton.icon(
@@ -689,7 +691,8 @@ class _DiaryFeedTabState extends State<_DiaryFeedTab> {
                                             '${attachments.length} attachment(s)',
                                           ),
                                           onPressed: () =>
-                                              _showAttachmentsDialog(attachments),
+                                              _showAttachmentsDialog(
+                                                  attachments),
                                         ),
                                       TextButton.icon(
                                         icon: const Icon(
@@ -700,7 +703,8 @@ class _DiaryFeedTabState extends State<_DiaryFeedTab> {
                                         label: Text(
                                           '${(d['acknowledgements'] is List) ? (d['acknowledgements'] as List).length : 0} acknowledgement(s)',
                                         ),
-                                        onPressed: () => _showAcknowledgementsSheet(d),
+                                        onPressed: () =>
+                                            _showAcknowledgementsSheet(d),
                                       ),
                                     ],
                                   ),
@@ -728,7 +732,8 @@ class _DiaryFeedTabState extends State<_DiaryFeedTab> {
                                     value: 'acknowledgements',
                                     child: Row(
                                       children: [
-                                        Icon(Icons.check_circle_outline, color: Color(0xFF6C63FF)),
+                                        Icon(Icons.check_circle_outline,
+                                            color: Color(0xFF6C63FF)),
                                         SizedBox(width: 8),
                                         Text('Acknowledgements'),
                                       ],
@@ -838,9 +843,7 @@ class _DiaryFeedTabState extends State<_DiaryFeedTab> {
               ),
               FilterChip(
                 label: Text(
-                  dateTo == null
-                      ? 'To'
-                      : DateFormat('dd MMM').format(dateTo!),
+                  dateTo == null ? 'To' : DateFormat('dd MMM').format(dateTo!),
                 ),
                 onSelected: (sel) async {
                   if (!sel) return;
@@ -909,6 +912,7 @@ class _DiaryCreateTabState extends State<_DiaryCreateTab> {
   DateTime date = DateTime.now();
   String type = 'HOMEWORK';
   bool submitting = false;
+  bool scanningDocument = false;
 
   List<Map<String, dynamic>> attachments = [];
   List<Map<String, dynamic>> classes = [];
@@ -946,7 +950,8 @@ class _DiaryCreateTabState extends State<_DiaryCreateTab> {
         _titleCtrl.text = d['title'] ?? '';
         _contentCtrl.text = d['content'] ?? '';
         type = d['type'] ?? 'HOMEWORK';
-        date = DateTime.tryParse((d['date'] ?? '').toString()) ?? DateTime.now();
+        date =
+            DateTime.tryParse((d['date'] ?? '').toString()) ?? DateTime.now();
         attachments = List<Map<String, dynamic>>.from(d['attachments'] ?? []);
       });
 
@@ -1037,8 +1042,10 @@ class _DiaryCreateTabState extends State<_DiaryCreateTab> {
 
     if (_isImageFileName(lower)) return Icons.image;
     if (lower.endsWith('.pdf')) return Icons.picture_as_pdf;
-    if (lower.endsWith('.doc') || lower.endsWith('.docx')) return Icons.description;
-    if (lower.endsWith('.xls') || lower.endsWith('.xlsx')) return Icons.table_chart;
+    if (lower.endsWith('.doc') || lower.endsWith('.docx'))
+      return Icons.description;
+    if (lower.endsWith('.xls') || lower.endsWith('.xlsx'))
+      return Icons.table_chart;
     return Icons.attach_file;
   }
 
@@ -1224,6 +1231,55 @@ class _DiaryCreateTabState extends State<_DiaryCreateTab> {
     setState(() {
       attachments.addAll(picked);
     });
+  }
+
+  Future<void> _scanDocument() async {
+    if (!Platform.isAndroid || scanningDocument) return;
+
+    setState(() => scanningDocument = true);
+
+    final scanner = DocumentScanner(
+      options: DocumentScannerOptions(
+        documentFormats: const {DocumentFormat.pdf},
+        mode: ScannerMode.full,
+        pageLimit: 20,
+        isGalleryImport: false,
+      ),
+    );
+
+    try {
+      final result = await scanner.scanDocument();
+      final pdfPath = result.pdf?.uri.trim() ?? '';
+      if (pdfPath.isEmpty) return;
+
+      final file = File(pdfPath);
+      if (!await file.exists()) {
+        throw const FileSystemException('Scanned PDF was not created');
+      }
+
+      final timestamp = DateFormat('yyyyMMdd-HHmmss').format(DateTime.now());
+      final name = 'scanned-diary-$timestamp.pdf';
+
+      if (!mounted) return;
+      setState(() {
+        attachments.add({
+          'path': pdfPath,
+          'name': name,
+          'local': true,
+        });
+      });
+      _snack('${result.pdf!.pageCount} page(s) scanned and attached', false);
+    } on PlatformException catch (e) {
+      // The plugin reports user cancellation as a PlatformException.
+      if (!e.message.toString().toLowerCase().contains('cancel')) {
+        _snack('Could not scan document: ${e.message ?? e.code}', true);
+      }
+    } catch (e) {
+      _snack('Could not scan document: $e', true);
+    } finally {
+      await scanner.close();
+      if (mounted) setState(() => scanningDocument = false);
+    }
   }
 
   Future<void> _addLinkAttachment() async {
@@ -1488,7 +1544,8 @@ class _DiaryCreateTabState extends State<_DiaryCreateTab> {
                       else
                         Column(
                           children: attachments
-                              .map((a) => _buildAttachmentTile(a, inPreview: true))
+                              .map((a) =>
+                                  _buildAttachmentTile(a, inPreview: true))
                               .toList(),
                         ),
                     ],
@@ -1520,7 +1577,9 @@ class _DiaryCreateTabState extends State<_DiaryCreateTab> {
                                 _submit();
                               },
                         icon: const Icon(Icons.send),
-                        label: Text(widget.existing == null ? 'Submit Now' : 'Update Now'),
+                        label: Text(widget.existing == null
+                            ? 'Submit Now'
+                            : 'Update Now'),
                         style: ElevatedButton.styleFrom(
                           minimumSize: const Size.fromHeight(48),
                           backgroundColor: const Color(0xFF6C63FF),
@@ -1713,7 +1772,8 @@ class _DiaryCreateTabState extends State<_DiaryCreateTab> {
       if (!mounted) return;
 
       if (res.statusCode == 200 || res.statusCode == 201) {
-        _snack(isEdit ? 'Diary updated successfully' : 'Diary saved successfully');
+        _snack(
+            isEdit ? 'Diary updated successfully' : 'Diary saved successfully');
 
         if (isEdit) {
           Navigator.pop(context, true);
@@ -2087,15 +2147,41 @@ class _DiaryCreateTabState extends State<_DiaryCreateTab> {
                 ],
               ),
               const SizedBox(height: 16),
+              if (Platform.isAndroid) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    icon: scanningDocument
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.document_scanner),
+                    label: Text(
+                      scanningDocument ? 'Opening Scanner...' : 'Scan Document',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF6C63FF),
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: scanningDocument ? null : _scanDocument,
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
               Row(
                 children: [
                   Expanded(
-                    child: ElevatedButton.icon(
+                    child: OutlinedButton.icon(
                       icon: const Icon(Icons.attach_file),
                       label: const Text('Attach Files'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF6C63FF),
-                        foregroundColor: Colors.white,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF6C63FF),
+                        side: const BorderSide(color: Color(0xFF6C63FF)),
                       ),
                       onPressed: _pickFiles,
                     ),

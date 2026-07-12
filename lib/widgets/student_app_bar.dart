@@ -14,7 +14,7 @@ class StudentAppBar extends StatelessWidget implements PreferredSizeWidget {
     super.key,
     this.parentContext,
     this.onLogout,
-    this.title = "The Pathseekers International\nSchool",
+    this.title = "Seth Malook Chand\nInternational School",
     this.scaffoldKey,
   });
 

@@ -31,10 +31,10 @@
               "client_type": 3
             },
             {
-              "client_id": "667315534601-dnp8i19on8kovjkevskhvths1icc5l4t.apps.googleusercontent.com",
+              "client_id": "667315534601-3eg0s1f6johubr6fsq463689q7qenu2f.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "com.example.teacherapp"
+                "bundle_id": "com.tpis.app"
               }
             }
           ]
@@ -75,10 +75,10 @@
               "client_type": 3
             },
             {
-              "client_id": "667315534601-dnp8i19on8kovjkevskhvths1icc5l4t.apps.googleusercontent.com",
+              "client_id": "667315534601-3eg0s1f6johubr6fsq463689q7qenu2f.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "com.example.teacherapp"
+                "bundle_id": "com.tpis.app"
               }
             }
           ]
@@ -111,10 +111,10 @@
               "client_type": 3
             },
             {
-              "client_id": "667315534601-dnp8i19on8kovjkevskhvths1icc5l4t.apps.googleusercontent.com",
+              "client_id": "667315534601-3eg0s1f6johubr6fsq463689q7qenu2f.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "com.example.teacherapp"
+                "bundle_id": "com.tpis.app"
               }
             }
           ]
@@ -155,10 +155,10 @@
               "client_type": 3
             },
             {
-              "client_id": "667315534601-dnp8i19on8kovjkevskhvths1icc5l4t.apps.googleusercontent.com",
+              "client_id": "667315534601-3eg0s1f6johubr6fsq463689q7qenu2f.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "com.example.teacherapp"
+                "bundle_id": "com.tpis.app"
               }
             }
           ]
@@ -191,10 +191,82 @@
               "client_type": 3
             },
             {
-              "client_id": "667315534601-dnp8i19on8kovjkevskhvths1icc5l4t.apps.googleusercontent.com",
+              "client_id": "667315534601-3eg0s1f6johubr6fsq463689q7qenu2f.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "com.example.teacherapp"
+                "bundle_id": "com.tpis.app"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:667315534601:android:11e892f668fb4a937ab1d8",
+        "android_client_info": {
+          "package_name": "com.smato.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "667315534601-sijubrc7jukbiqd3pnh3clll8inelffv.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD6h5jlZ1DJbGulpsxFY9JDLOfsBsl8XJU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "667315534601-sijubrc7jukbiqd3pnh3clll8inelffv.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "667315534601-3eg0s1f6johubr6fsq463689q7qenu2f.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.tpis.app"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:667315534601:android:9b51a130c72906b27ab1d8",
+        "android_client_info": {
+          "package_name": "com.smcis.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "667315534601-sijubrc7jukbiqd3pnh3clll8inelffv.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD6h5jlZ1DJbGulpsxFY9JDLOfsBsl8XJU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "667315534601-sijubrc7jukbiqd3pnh3clll8inelffv.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "667315534601-3eg0s1f6johubr6fsq463689q7qenu2f.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.tpis.app"
               }
             }
           ]
@@ -227,10 +299,10 @@
               "client_type": 3
             },
             {
-              "client_id": "667315534601-dnp8i19on8kovjkevskhvths1icc5l4t.apps.googleusercontent.com",
+              "client_id": "667315534601-3eg0s1f6johubr6fsq463689q7qenu2f.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "com.example.teacherapp"
+                "bundle_id": "com.tpis.app"
               }
             }
           ]

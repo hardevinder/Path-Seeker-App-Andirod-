@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:studentapp_new/main.dart';
+import 'package:smcis_app/main.dart';
 
 void main() {
   testWidgets('App starts on login screen', (WidgetTester tester) async {
@@ -8,7 +8,7 @@ void main() {
 
     await tester.pump();
 
-    expect(find.text('TPIS'), findsOneWidget);
+    expect(find.text('SMCIS'), findsOneWidget);
     expect(find.text('Sign in'), findsOneWidget);
   });
 }

@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "studentapp_new" "\0"
+            VALUE "CompanyName", "Seth Malook Chand International School" "\0"
+            VALUE "FileDescription", "SMCIS" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "studentapp_new" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2025 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "studentapp_new.exe" "\0"
-            VALUE "ProductName", "studentapp_new" "\0"
+            VALUE "InternalName", "smcis" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2025 Seth Malook Chand International School. All rights reserved." "\0"
+            VALUE "OriginalFilename", "smcis.exe" "\0"
+            VALUE "ProductName", "SMCIS" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

@@ -52,7 +52,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyD6h5jlZ1DJbGulpsxFY9JDLOfsBsl8XJU',
-    appId: '1:667315534601:android:f0d55dfb9c331e7b7ab1d8',
+    appId: '1:667315534601:android:9b51a130c72906b27ab1d8',
     messagingSenderId: '667315534601',
     projectId: 'schoolerp-143ea',
     storageBucket: 'schoolerp-143ea.firebasestorage.app',
@@ -64,7 +64,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '667315534601',
     projectId: 'schoolerp-143ea',
     storageBucket: 'schoolerp-143ea.firebasestorage.app',
-    iosClientId: '667315534601-fk2skpfe5s2j58eq026bvffm8oeg1juk.apps.googleusercontent.com',
+    iosClientId:
+        '667315534601-fk2skpfe5s2j58eq026bvffm8oeg1juk.apps.googleusercontent.com',
     iosBundleId: 'com.example.studentapp',
   );
 
@@ -74,7 +75,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '667315534601',
     projectId: 'schoolerp-143ea',
     storageBucket: 'schoolerp-143ea.firebasestorage.app',
-    iosClientId: '667315534601-fk2skpfe5s2j58eq026bvffm8oeg1juk.apps.googleusercontent.com',
+    iosClientId:
+        '667315534601-fk2skpfe5s2j58eq026bvffm8oeg1juk.apps.googleusercontent.com',
     iosBundleId: 'com.example.studentapp',
   );
 

@@ -16,7 +16,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.pathseeker.international"
+    namespace = "com.smcis.app"
 
     // ✅ Plugins require NDK 27.x
     ndkVersion = "27.0.12077973"
@@ -25,14 +25,14 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.pathseeker.international"
+        applicationId = "com.smcis.app"
 
-        // Keep Play Store device support aligned with previous releases.
-        minSdk = 20 + 1
+        // Flutter's current Android dependency validation requires minSdk 23+.
+        minSdk = flutter.minSdkVersion
         targetSdk = 36
 
-        versionCode = 57
-        versionName = "1.0.35"
+        versionCode = 59
+        versionName = "1.0.37"
 
         multiDexEnabled = true
 
