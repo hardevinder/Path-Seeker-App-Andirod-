@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
@@ -77,5 +78,23 @@ class VisitorApi {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(decoded['error'] ?? 'Visitor action failed.');
     }
+  }
+
+  static Future<Uint8List> idProof(int id) async {
+    final response = await http.get(
+      Uri.parse('${ApiService.baseUrl}/visitors/$id/id-proof'),
+      headers: {'Authorization': 'Bearer ${await _token()}'},
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      String message = 'ID proof is unavailable or expired.';
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map && decoded['error'] != null) {
+          message = '${decoded['error']}';
+        }
+      } catch (_) {}
+      throw Exception(message);
+    }
+    return response.bodyBytes;
   }
 }

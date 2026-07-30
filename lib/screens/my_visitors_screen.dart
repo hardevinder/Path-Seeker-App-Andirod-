@@ -46,6 +46,47 @@ class _MyVisitorsScreenState extends State<MyVisitorsScreen> {
     }
   }
 
+  Future<void> _viewId(Map<String, dynamic> row) async {
+    try {
+      final bytes = await VisitorApi.idProof(int.parse('${row['id']}'));
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => Dialog(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 700, maxHeight: 750),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppBar(
+                  automaticallyImplyLeading: false,
+                  title: Text('${row['name'] ?? 'Visitor'} — ID Proof'),
+                  actions: [
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+                Flexible(
+                  child: InteractiveViewer(
+                    minScale: 0.5,
+                    maxScale: 5,
+                    child: Image.memory(bytes, fit: BoxFit.contain),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -78,6 +119,12 @@ class _MyVisitorsScreenState extends State<MyVisitorsScreen> {
                             if (v['meeting_started_at'] != null) Text('Meeting started: ${_date(v['meeting_started_at'])}'),
                             if (v['meeting_ended_at'] != null) Text('Meeting completed: ${_date(v['meeting_ended_at'])}'),
                             const SizedBox(height: 10),
+                            if (_frontOffice && v['has_id_proof'] == true)
+                              OutlinedButton.icon(
+                                onPressed: () => _viewId(v),
+                                icon: const Icon(Icons.badge_outlined),
+                                label: const Text('View ID Proof'),
+                              ),
                             if (!_frontOffice && pending) Row(children: [
                               Expanded(child: FilledButton.icon(onPressed: () => _act(v, 'respond', decision: 'ACCEPTED'), icon: const Icon(Icons.check), label: const Text('Accept'))),
                               const SizedBox(width: 8),
