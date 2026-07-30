@@ -10,9 +10,11 @@ class AppRoles {
   static const String transport = 'transport';
   static const String driver = 'driver';
   static const String examination = 'examination';
+  static const String frontoffice = 'frontoffice';
 
   static const List<String> mobileRolePriority = [
     superadmin,
+    frontoffice,
     accounts,
     hr,
     transport,
@@ -51,6 +53,10 @@ class AppRoles {
       case 'exam':
       case 'exams':
         return examination;
+      case 'front office':
+      case 'front_office':
+      case 'frontoffice':
+        return frontoffice;
       case 'coordinator':
       case 'academic coordinator':
       case 'academic_coordinator':
@@ -79,7 +85,8 @@ class AppRoles {
         normalized == hr ||
         normalized == transport ||
         normalized == driver ||
-        normalized == examination;
+        normalized == examination ||
+        normalized == frontoffice;
   }
 
   static String label(String role) {
@@ -96,6 +103,8 @@ class AppRoles {
         return 'Transport Driver';
       case examination:
         return 'Examination';
+      case frontoffice:
+        return 'Front Office';
       case coordinator:
         return 'Coordinator';
       case teacher:
@@ -127,6 +136,8 @@ class AppRoles {
         return '/driver';
       case examination:
         return '/examination';
+      case frontoffice:
+        return '/frontoffice';
       case coordinator:
         return '/coordinator';
       case teacher:

@@ -190,6 +190,10 @@ class NotificationService {
     final type = (data['type'] ?? data['notification_type'] ?? '')
         .toString()
         .toLowerCase();
+    if (type == 'visitor_request') {
+      navigatorKey.currentState?.pushNamed('/my-visitors');
+      return;
+    }
     if (normalizedScreen == 'studentbuslive' ||
         normalizedScreen == 'bustracking' ||
         normalizedScreen == 'studentbustracking' ||

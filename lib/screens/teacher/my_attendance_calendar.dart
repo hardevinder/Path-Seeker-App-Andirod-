@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
+import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../constants/constants.dart';
@@ -17,7 +18,8 @@ class MyAttendanceCalendarScreen extends StatefulWidget {
       _MyAttendanceCalendarScreenState();
 }
 
-class _MyAttendanceCalendarScreenState extends State<MyAttendanceCalendarScreen> {
+class _MyAttendanceCalendarScreenState
+    extends State<MyAttendanceCalendarScreen> {
   static const String attendanceEndpoint = '/employee-attendance/my-calendar';
   static const String holidaysEndpoint = '/holidays';
 
@@ -25,6 +27,7 @@ class _MyAttendanceCalendarScreenState extends State<MyAttendanceCalendarScreen>
 
   bool _loading = true;
   bool _holidaysLoaded = false;
+  bool _punching = false;
 
   List<Map<String, dynamic>> _records = [];
   List<Map<String, dynamic>> _holidays = [];
@@ -105,8 +108,74 @@ class _MyAttendanceCalendarScreenState extends State<MyAttendanceCalendarScreen>
         'Authorization': 'Bearer $token',
     };
     return http.get(_buildUri(pathWithQuery), headers: headers).timeout(
-      const Duration(seconds: 20),
-    );
+          const Duration(seconds: 20),
+        );
+  }
+
+  Future<http.Response> _authPost(
+      String path, Map<String, dynamic> body) async {
+    final token = await _getToken();
+    return http
+        .post(
+          _buildUri(path),
+          headers: {
+            'Content-Type': 'application/json',
+            if (token != null && token.trim().isNotEmpty)
+              'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 25));
+  }
+
+  Future<void> _markPunch(String action) async {
+    if (_punching) return;
+    setState(() => _punching = true);
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        throw Exception('Please turn on Location Services and try again.');
+      }
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        throw Exception('Location permission is required to mark attendance.');
+      }
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 20),
+      );
+      final response = await _authPost('/employee-attendance/punch', {
+        'action': action,
+        'latitude': position.latitude,
+        'longitude': position.longitude,
+        'accuracy_meters': position.accuracy,
+      });
+      final decoded = jsonDecode(response.body);
+      final message = decoded is Map
+          ? (decoded['message'] ?? 'Unable to mark attendance').toString()
+          : 'Unable to mark attendance';
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception(message);
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+      await _fetchAttendance();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              Text(error.toString().replaceFirst(RegExp(r'^Exception: '), '')),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _punching = false);
+    }
   }
 
   // =========================
@@ -178,17 +247,16 @@ class _MyAttendanceCalendarScreenState extends State<MyAttendanceCalendarScreen>
             .where((e) => e is Map)
             .map((e) => Map<String, dynamic>.from(e as Map))
             .where((h) {
-              final ds = (h['date'] ?? h['holiday_date'] ?? '').toString();
-              if (!ds.startsWith(monthStr)) return false;
+          final ds = (h['date'] ?? h['holiday_date'] ?? '').toString();
+          if (!ds.startsWith(monthStr)) return false;
 
-              final clsId = h['classId'] ??
-                  h['class_id'] ??
-                  (h['class'] is Map ? h['class']['id'] : null);
+          final clsId = h['classId'] ??
+              h['class_id'] ??
+              (h['class'] is Map ? h['class']['id'] : null);
 
-              // ✅ ignore class holidays
-              return clsId == null;
-            })
-            .toList();
+          // ✅ ignore class holidays
+          return clsId == null;
+        }).toList();
 
         _holidayByDate.clear();
         for (final h in filtered) {
@@ -295,10 +363,14 @@ class _MyAttendanceCalendarScreenState extends State<MyAttendanceCalendarScreen>
       final rec = _recordFor(ds);
       final s = (rec?['status'] ?? 'unmarked').toString();
 
-      if (s == 'present') present++;
-      else if (s == 'absent') absent++;
-      else if (s == 'leave') leave++;
-      else unmarked++;
+      if (s == 'present')
+        present++;
+      else if (s == 'absent')
+        absent++;
+      else if (s == 'leave')
+        leave++;
+      else
+        unmarked++;
     }
 
     return _Summary(
@@ -357,8 +429,10 @@ class _MyAttendanceCalendarScreenState extends State<MyAttendanceCalendarScreen>
 
   void _toggleStatus(String s) {
     setState(() {
-      if (_statusFilter.contains(s)) _statusFilter.remove(s);
-      else _statusFilter.add(s);
+      if (_statusFilter.contains(s))
+        _statusFilter.remove(s);
+      else
+        _statusFilter.add(s);
     });
   }
 
@@ -487,7 +561,6 @@ class _MyAttendanceCalendarScreenState extends State<MyAttendanceCalendarScreen>
               const SizedBox(height: 12),
               const Divider(height: 1),
               const SizedBox(height: 12),
-
               if (holiday != null) ...[
                 _infoCard(
                   icon: Icons.celebration,
@@ -519,8 +592,8 @@ class _MyAttendanceCalendarScreenState extends State<MyAttendanceCalendarScreen>
                     Expanded(
                       child: _miniStat(
                         label: 'Out Time',
-                        value:
-                            (rec['out_time'] ?? rec['outTime'] ?? '-').toString(),
+                        value: (rec['out_time'] ?? rec['outTime'] ?? '-')
+                            .toString(),
                         icon: Icons.logout,
                       ),
                     ),
@@ -576,6 +649,8 @@ class _MyAttendanceCalendarScreenState extends State<MyAttendanceCalendarScreen>
         child: ListView(
           padding: const EdgeInsets.all(12),
           children: [
+            _mobilePunchCard(),
+            const SizedBox(height: 12),
             _monthHeader(),
             const SizedBox(height: 12),
             _summaryRow(summary),
@@ -588,6 +663,60 @@ class _MyAttendanceCalendarScreenState extends State<MyAttendanceCalendarScreen>
             const SizedBox(height: 16),
             if (_holidaysLoaded && _holidays.isNotEmpty) _holidaysHint(),
             const SizedBox(height: 30),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _mobilePunchCard() {
+    final today = _recordByDate[_ymd.format(DateTime.now())];
+    final hasIn = (today?['in_time'] ?? '').toString().trim().isNotEmpty;
+    final hasOut = (today?['out_time'] ?? '').toString().trim().isNotEmpty;
+    return Card(
+      elevation: 2,
+      color: Theme.of(context).colorScheme.primaryContainer.withOpacity(.45),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(children: [
+              Icon(Icons.location_on_outlined),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text('School attendance',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              ),
+            ]),
+            const SizedBox(height: 6),
+            const Text(
+              'Mark attendance after reaching the configured school radius.',
+            ),
+            const SizedBox(height: 12),
+            if (_punching) const LinearProgressIndicator(),
+            if (_punching) const SizedBox(height: 10),
+            Row(children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _punching || hasIn ? null : () => _markPunch('in'),
+                  icon: const Icon(Icons.login),
+                  label: Text(hasIn ? 'IN marked' : 'Mark IN'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _punching || !hasIn || hasOut
+                      ? null
+                      : () => _markPunch('out'),
+                  icon: const Icon(Icons.logout),
+                  label: Text(hasOut ? 'OUT marked' : 'Mark OUT'),
+                ),
+              ),
+            ]),
           ],
         ),
       ),
@@ -621,8 +750,8 @@ class _MyAttendanceCalendarScreenState extends State<MyAttendanceCalendarScreen>
                     const SizedBox(height: 4),
                     Text(
                       'Tap to pick month',
-                      style: TextStyle(
-                          color: Colors.grey.shade600, fontSize: 12),
+                      style:
+                          TextStyle(color: Colors.grey.shade600, fontSize: 12),
                     ),
                   ],
                 ),
@@ -643,17 +772,18 @@ class _MyAttendanceCalendarScreenState extends State<MyAttendanceCalendarScreen>
     return Row(
       children: [
         Expanded(
-          child:
-              _summaryCard('Present', s.present.toString(), STATUS_COLORS['present']!),
+          child: _summaryCard(
+              'Present', s.present.toString(), STATUS_COLORS['present']!),
         ),
         const SizedBox(width: 10),
         Expanded(
-          child:
-              _summaryCard('Absent', s.absent.toString(), STATUS_COLORS['absent']!),
+          child: _summaryCard(
+              'Absent', s.absent.toString(), STATUS_COLORS['absent']!),
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: _summaryCard('Leave', s.leave.toString(), STATUS_COLORS['leave']!),
+          child: _summaryCard(
+              'Leave', s.leave.toString(), STATUS_COLORS['leave']!),
         ),
         const SizedBox(width: 10),
         Expanded(
@@ -808,7 +938,8 @@ class _MyAttendanceCalendarScreenState extends State<MyAttendanceCalendarScreen>
                     onSelected: (_) => _toggleStatus(s),
                     selectedColor: STATUS_COLORS[s]!.withOpacity(0.18),
                     checkmarkColor: STATUS_COLORS[s]!,
-                    side: BorderSide(color: STATUS_COLORS[s]!.withOpacity(0.35)),
+                    side:
+                        BorderSide(color: STATUS_COLORS[s]!.withOpacity(0.35)),
                   ),
               ],
             ),
@@ -952,10 +1083,9 @@ class _MyAttendanceCalendarScreenState extends State<MyAttendanceCalendarScreen>
 
   Widget _tileBottomLabel(_DayCell cell) {
     if (cell.holiday != null) {
-      final text = (cell.holiday!['title'] ??
-              cell.holiday!['description'] ??
-              'Holiday')
-          .toString();
+      final text =
+          (cell.holiday!['title'] ?? cell.holiday!['description'] ?? 'Holiday')
+              .toString();
       return Text(
         text,
         maxLines: 1,
@@ -1055,7 +1185,8 @@ class _MyAttendanceCalendarScreenState extends State<MyAttendanceCalendarScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text(title,
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 4),
                 Text(subtitle, style: TextStyle(color: Colors.grey.shade800)),
               ],
@@ -1095,7 +1226,8 @@ class _MyAttendanceCalendarScreenState extends State<MyAttendanceCalendarScreen>
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text(value, style: const TextStyle(fontWeight: FontWeight.w900)),
+                Text(value,
+                    style: const TextStyle(fontWeight: FontWeight.w900)),
               ],
             ),
           ),

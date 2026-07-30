@@ -3,9 +3,9 @@ description: "Seth Malook Chand International School app"
 publish_to: "none"
 
 # UPDATED for Play Store release
-# versionName = 1.0.37
-# versionCode = 59
-version: 1.0.37+59
+# versionName = 1.0.42
+# versionCode = 64
+version: 1.0.42+64
 
 environment:
   sdk: ">=3.4.1 <4.0.0"
@@ -64,6 +64,8 @@ dependencies:
   socket_io_client: ^2.0.0
   geolocator: ^12.0.0
   google_maps_flutter: 2.10.0
+  flutter_map: ^8.2.2
+  latlong2: ^0.9.1
 
   # -------------------------
   # 🧑‍🏫 Teacher & Attendance

@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
     <!-- ================================================= -->
     <!-- ❌ FORCE REMOVE ALL AUDIO PERMISSIONS COMPLETELY -->
@@ -73,6 +75,11 @@
         <meta-data
             android:name="juspay_client_id"
             android:value="@string/juspay_client_id" />
+
+        <!-- Generated from google-services.json by the Google Services plugin. -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="@string/google_api_key" />
 
         <activity
             android:name=".MainActivity"

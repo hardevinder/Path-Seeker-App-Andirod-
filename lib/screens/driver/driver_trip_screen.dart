@@ -1,12 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/api_service.dart';
+import '../../services/driver_location_service.dart';
 
 class DriverTripScreen extends StatefulWidget {
   const DriverTripScreen({super.key});
@@ -19,12 +18,8 @@ class _DriverTripScreenState extends State<DriverTripScreen> {
   String _tripType = 'pickup';
   String? _message;
   Map<String, dynamic>? _trip;
-  List<Map<String, dynamic>> _buses = [], _students = [];
-  int? _busId;
-  StreamSubscription<Position>? _positionSub;
-  DateTime? _lastUpload;
-  double? _accuracy;
-  Position? _pending;
+  List<Map<String, dynamic>> _buses = [], _routes = [], _students = [];
+  int? _busId, _operationalRouteId;
   final Map<int, String> _status = {};
   final Map<int, TextEditingController> _notes = {};
 
@@ -36,7 +31,6 @@ class _DriverTripScreenState extends State<DriverTripScreen> {
 
   @override
   void dispose() {
-    _positionSub?.cancel();
     for (final controller in _notes.values) {
       controller.dispose();
     }
@@ -91,6 +85,8 @@ class _DriverTripScreenState extends State<DriverTripScreen> {
       _busId = active?['bus_id'] as int? ??
           _busId ??
           (buses.length == 1 ? buses.first['id'] as int? : null);
+      _operationalRouteId = active?['operational_route_id'] as int?;
+      await _loadRoutes();
       await _loadStudents();
       if (active != null) await _startTracking();
     } catch (_) {
@@ -103,7 +99,8 @@ class _DriverTripScreenState extends State<DriverTripScreen> {
   Future<void> _loadStudents() async {
     final date = DateFormat('yyyy-MM-dd').format(DateTime.now());
     final response = await ApiService.rawGet(
-        '/transport-attendance/my-list?trip_type=$_tripType&date=$date');
+        '/transport-attendance/my-list?trip_type=$_tripType&date=$date'
+        '${_operationalRouteId == null ? '' : '&operational_route_id=$_operationalRouteId'}');
     if (response.statusCode < 200 || response.statusCode >= 300)
       throw Exception('students');
     final decoded = _decode(response.body);
@@ -122,6 +119,33 @@ class _DriverTripScreenState extends State<DriverTripScreen> {
           id,
           () => TextEditingController(
               text: row['attendance']?['notes']?.toString() ?? ''));
+    }
+  }
+
+  Future<void> _loadRoutes() async {
+    if (_busId == null) {
+      _routes = [];
+      _operationalRouteId = null;
+      return;
+    }
+    final response = await ApiService.rawGet(
+        '/bus-trips/my-routes?bus_id=$_busId&trip_type=$_tripType');
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('routes');
+    }
+    final decoded = _decode(response.body);
+    _routes = decoded is Map && decoded['routes'] is List
+        ? (decoded['routes'] as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList()
+        : [];
+    final stillAvailable = _routes.any(
+        (route) => route['id'].toString() == _operationalRouteId?.toString());
+    if (!stillAvailable) {
+      _operationalRouteId = _routes.length == 1
+          ? int.tryParse(_routes.first['id'].toString())
+          : null;
     }
   }
 
@@ -144,12 +168,19 @@ class _DriverTripScreenState extends State<DriverTripScreen> {
       _snack('Select your assigned bus first.');
       return;
     }
+    if (_operationalRouteId == null) {
+      _snack('Select the route for this trip.');
+      return;
+    }
     if (!await _confirm(
         'Start ${_tripType == 'pickup' ? 'Pickup' : 'Drop'} trip?',
         'Live location sharing will begin.')) return;
     setState(() => _saving = true);
-    final response = await ApiService.rawPost(
-        '/bus-trips/start', {'bus_id': _busId, 'trip_type': _tripType});
+    final response = await ApiService.rawPost('/bus-trips/start', {
+      'bus_id': _busId,
+      'trip_type': _tripType,
+      'operational_route_id': _operationalRouteId
+    });
     if (response.statusCode >= 200 && response.statusCode < 300) {
       final decoded = _decode(response.body);
       _trip = Map<String, dynamic>.from(decoded['trip']);
@@ -162,71 +193,24 @@ class _DriverTripScreenState extends State<DriverTripScreen> {
   }
 
   Future<void> _startTracking() async {
-    if (_positionSub != null) return;
-    if (!await Geolocator.isLocationServiceEnabled()) {
-      _message = 'Turn on Location Services to share the bus location.';
-      return;
-    }
-    var permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied)
-      permission = await Geolocator.requestPermission();
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) {
-      _message =
-          'Location permission is required while a trip is active. Enable it in phone settings.';
-      return;
-    }
-    _tracking = true;
-    _positionSub = Geolocator.getPositionStream(
-            locationSettings: const LocationSettings(
-                accuracy: LocationAccuracy.high, distanceFilter: 25))
-        .listen(_onPosition, onError: (_) {
-      if (mounted)
-        setState(() => _message =
-            'GPS is temporarily unavailable. Tracking will retry automatically.');
-    });
+    final tripId = _trip?['id'] as int?;
+    if (tripId == null) return;
+    final error = await DriverLocationService.instance.start(tripId);
+    _tracking = error == null;
+    _message = error;
     if (mounted) setState(() {});
-  }
-
-  Future<void> _onPosition(Position position) async {
-    if (_trip == null) return;
-    if (_lastUpload != null &&
-        DateTime.now().difference(_lastUpload!) < const Duration(seconds: 12)) {
-      _pending = position;
-      return;
-    }
-    final response =
-        await ApiService.rawPost('/bus-trips/${_trip!['id']}/location', {
-      'latitude': position.latitude,
-      'longitude': position.longitude,
-      'accuracy_meters': position.accuracy,
-      'speed_kmh': position.speed < 0 ? null : position.speed * 3.6,
-      'heading': position.heading < 0 ? null : position.heading,
-      'recorded_at': position.timestamp.toUtc().toIso8601String(),
-    });
-    if (response.statusCode >= 200 && response.statusCode < 300) {
-      _lastUpload = DateTime.now();
-      _accuracy = position.accuracy;
-      _pending = null;
-      if (mounted) setState(() => _message = null);
-    } else {
-      _pending = position;
-    }
   }
 
   Future<void> _endTrip() async {
     if (!await _confirm('End trip?',
         'Location sharing will stop and this trip will be completed.')) return;
     setState(() => _saving = true);
-    if (_pending != null) await _onPosition(_pending!);
     final response =
         await ApiService.rawPost('/bus-trips/${_trip!['id']}/end', {});
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      await _positionSub?.cancel();
-      _positionSub = null;
+      await DriverLocationService.instance.stop();
       _tracking = false;
       _trip = null;
-      _lastUpload = null;
       _snack('Trip completed successfully.');
     } else {
       _snack(_friendly(response.body, 'Trip could not be ended.'));
@@ -241,6 +225,7 @@ class _DriverTripScreenState extends State<DriverTripScreen> {
         await ApiService.rawPost('/transport-attendance/mark-bulk', {
       'date': DateFormat('yyyy-MM-dd').format(DateTime.now()),
       'trip_type': _tripType,
+      'operational_route_id': _operationalRouteId,
       'records': _students.map((e) {
         final id = e['student_id'] as int;
         return {
@@ -295,6 +280,7 @@ class _DriverTripScreenState extends State<DriverTripScreen> {
                         ? null
                         : (v) async {
                             setState(() => _tripType = v.first);
+                            await _loadRoutes();
                             await _loadStudents();
                             if (mounted) setState(() {});
                           }),
@@ -314,6 +300,25 @@ class _DriverTripScreenState extends State<DriverTripScreen> {
                         ? null
                         : (v) async {
                             _busId = v;
+                            await _loadRoutes();
+                            await _loadStudents();
+                            if (mounted) setState(() {});
+                          }),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                    value: _operationalRouteId,
+                    decoration: const InputDecoration(
+                        labelText: 'Route', border: OutlineInputBorder()),
+                    items: _routes
+                        .map((route) => DropdownMenuItem(
+                            value: int.tryParse(route['id'].toString()),
+                            child: Text(
+                                '${route['route_name'] ?? 'Route'}${route['route_code'] == null ? '' : ' • ${route['route_code']}'}')))
+                        .toList(),
+                    onChanged: _trip != null
+                        ? null
+                        : (value) async {
+                            _operationalRouteId = value;
                             await _loadStudents();
                             if (mounted) setState(() {});
                           }),
@@ -345,9 +350,9 @@ class _DriverTripScreenState extends State<DriverTripScreen> {
                         title: Text(_tracking
                             ? 'GPS tracking active'
                             : 'GPS tracking inactive'),
-                        subtitle: Text(_lastUpload == null
-                            ? 'Waiting for location update'
-                            : 'Last update ${DateFormat('h:mm:ss a').format(_lastUpload!)} • Accuracy ${_accuracy!.round()} m'))),
+                        subtitle: Text(_tracking
+                            ? 'Updates continue in the background and while the bus is stationary'
+                            : 'Start a trip to share the bus location'))),
                 if (_message != null)
                   Card(
                       color: Colors.orange.shade50,

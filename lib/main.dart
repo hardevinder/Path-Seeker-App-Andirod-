@@ -100,6 +100,9 @@ import 'screens/teacher/teacher_my_leave_requests_screen.dart';
 import 'services/notification_service.dart';
 import 'services/api_service.dart';
 import 'screens/admin/role_feature_screens.dart';
+import 'screens/frontoffice/frontoffice_dashboard.dart';
+import 'screens/frontoffice/visitor_checkin_screen.dart';
+import 'screens/my_visitors_screen.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -303,6 +306,9 @@ class StudentApp extends StatelessWidget {
           '/transport': (context) => const TransportDashboardScreen(),
           '/driver': (context) => const DriverDashboardScreen(),
           '/examination': (context) => const ExaminationDashboardScreen(),
+          '/frontoffice': (context) => const FrontOfficeDashboard(),
+          '/frontoffice/visitor-checkin': (context) => const VisitorCheckinScreen(),
+          '/my-visitors': (context) => const MyVisitorsScreen(),
 
           // Superadmin sub-pages
           '/superadmin/school-settings': (context) =>
@@ -451,6 +457,7 @@ class StudentApp extends StatelessWidget {
           '/fees': (context) => const StudentFeeScreen(),
           '/assignments': (context) => const StudentAssignmentsScreen(),
           '/student/bus-live': (context) => const StudentBusLiveScreen(),
+          '/teacher/bus-live': (context) => const StudentBusLiveScreen(),
           '/student/lesson-plans': (context) =>
               const StudentLessonPlansScreen(),
           '/student-lesson-plans': (context) =>

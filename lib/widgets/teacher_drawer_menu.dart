@@ -240,6 +240,13 @@ class TeacherDrawerMenu extends StatelessWidget {
                 ),
                 _tile(
                   context: context,
+                  routeName: '/my-visitors',
+                  icon: Icons.badge_rounded,
+                  title: 'My Visitors',
+                  color: const Color(0xFF2563EB),
+                ),
+                _tile(
+                  context: context,
                   routeName: attendanceRoute,
                   icon: Icons.check_box_outlined,
                   title: attendanceTitle,
@@ -370,6 +377,14 @@ class TeacherDrawerMenu extends StatelessWidget {
                   title: 'Library',
                   color: const Color(0xFF1D4ED8),
                   subtitle: 'Issued books & dues',
+                ),
+                _tile(
+                  context: context,
+                  routeName: '/teacher/bus-live',
+                  icon: Icons.directions_bus_filled_rounded,
+                  title: 'My Bus Route',
+                  color: const Color(0xFF0F766E),
+                  subtitle: 'Assigned route & live bus',
                 ),
                 _tile(
                   context: context,
