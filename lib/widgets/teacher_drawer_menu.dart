@@ -252,6 +252,16 @@ class TeacherDrawerMenu extends StatelessWidget {
                   title: attendanceTitle,
                   color: const Color(0xFF6C63FF),
                 ),
+                _tile(
+                  context: context,
+                  routeName: '/teacher/ptm',
+                  icon: Icons.groups_2_rounded,
+                  title: isCoordinatorDrawer ? 'PTM Management' : 'PTM Feedback',
+                  color: const Color(0xFF7C3AED),
+                  subtitle: isCoordinatorDrawer
+                      ? 'Class-wise PTM progress'
+                      : 'Scan forms and mark attendance',
+                ),
                 if (isCoordinatorDrawer)
                   _tile(
                     context: context,

@@ -1095,6 +1095,11 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
         'route': '/teacher/attendance'
       },
       {
+        'label': 'PTM Feedback',
+        'icon': Icons.groups_2_rounded,
+        'route': '/teacher/ptm'
+      },
+      {
         'label': 'Messages',
         'icon': Icons.forum_rounded,
         'route': '/teacher/messages',

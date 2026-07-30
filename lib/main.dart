@@ -55,6 +55,7 @@ import 'screens/teacher/teacher_digital_diary_screen.dart';
 import 'screens/teacher/teacher_messages_screen.dart';
 import 'screens/teacher/teacher_marks_entry_screen.dart';
 import 'screens/teacher/teacher_lesson_plan_screen.dart';
+import 'screens/teacher/teacher_ptm_screen.dart';
 
 // New role dashboards
 import 'screens/superadmin/superadmin_dashboard.dart';
@@ -418,6 +419,7 @@ class StudentApp extends StatelessWidget {
           '/examination/final-result': (context) =>
               const ExaminationFinalResultScreen(),
           '/teacher/attendance': (context) => const MarkAttendanceScreen(),
+          '/teacher/ptm': (context) => const TeacherPtmScreen(),
 
           // ✅ Teacher: approve/reject STUDENT leave requests
           '/teacher/leave-requests': (context) =>
