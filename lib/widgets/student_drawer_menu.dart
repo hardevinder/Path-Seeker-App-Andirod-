@@ -193,6 +193,14 @@ class StudentDrawerMenu extends StatelessWidget {
                 ),
                 _tile(
                   context: context,
+                  routeName: '/assessments',
+                  icon: Icons.assignment_turned_in_rounded,
+                  title: 'Tests & Results',
+                  color: const Color(0xFF4F46E5),
+                  subtitle: 'Attempt tests and upload answer sheets',
+                ),
+                _tile(
+                  context: context,
                   routeName: '/student/library',
                   icon: Icons.local_library_rounded,
                   title: 'Library',

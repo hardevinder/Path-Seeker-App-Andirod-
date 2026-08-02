@@ -391,6 +391,14 @@ class TeacherDrawerMenu extends StatelessWidget {
                 ),
                 _tile(
                   context: context,
+                  routeName: '/assessments',
+                  icon: Icons.assignment_turned_in_rounded,
+                  title: 'Assessments & Tests',
+                  color: const Color(0xFF4F46E5),
+                  subtitle: 'AI tests, written papers and evaluation',
+                ),
+                _tile(
+                  context: context,
                   routeName: '/teacher/library',
                   icon: Icons.local_library_rounded,
                   title: 'Library',

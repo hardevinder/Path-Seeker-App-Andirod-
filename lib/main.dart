@@ -42,6 +42,7 @@ import 'screens/student_diary_screen.dart';
 import 'screens/student_messages_screen.dart';
 import 'screens/student_lesson_plans_screen.dart';
 import 'screens/online_classes_screen.dart';
+import 'screens/assessments_screen.dart';
 import 'screens/library_screen.dart';
 
 // teacher screens
@@ -278,6 +279,7 @@ class StudentApp extends StatelessWidget {
           // Teacher
           '/teacher': (context) => const TeacherDashboard(),
           '/online-classes': (context) => const OnlineClassesScreen(),
+          '/assessments': (context) => const AssessmentsScreen(),
           '/coordinator': (context) => const CoordinatorDashboard(),
           '/academic-coordinator': (context) => const CoordinatorDashboard(),
           '/coordinator/attendance-summary': (context) =>

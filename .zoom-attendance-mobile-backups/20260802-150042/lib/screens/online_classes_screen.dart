@@ -8,9 +8,6 @@ import '../models/online_class_models.dart';
 import '../services/online_class_api.dart';
 import '../widgets/student_drawer_menu.dart';
 import '../widgets/teacher_drawer_menu.dart';
-import 'online_class_attendance_screen.dart';
-import 'assessments_screen.dart';
-import 'teacher_assessment_builder_screen.dart';
 
 class OnlineClassesScreen extends StatefulWidget {
   const OnlineClassesScreen({super.key});
@@ -127,26 +124,12 @@ class _OnlineClassesScreenState extends State<OnlineClassesScreen>
   Future<void> _openZoom(OnlineClass item, {required bool start}) async {
     try {
       final url = await OnlineClassApi.actionUrl(item.id, start: start);
-      if (!start && !_teacherView) {
-        _message('Attendance check-in recorded. Opening Zoom…');
-      }
       if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
         throw const OnlineClassApiException('Could not open Zoom.');
       }
     } catch (error) {
       _message(error.toString(), error: true);
     }
-  }
-
-  Future<void> _openAttendance(OnlineClass item) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => OnlineClassAttendanceScreen(
-          onlineClass: item,
-          canManage: item.canManage,
-        ),
-      ),
-    );
   }
 
   Future<void> _cancel(OnlineClass item) async {
@@ -183,24 +166,15 @@ class _OnlineClassesScreenState extends State<OnlineClassesScreen>
           error: true);
       return;
     }
-    final result = await showModalBottomSheet<Map<String, dynamic>>(
+    final saved = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       builder: (_) => _OnlineClassForm(item: item),
     );
-    if (result?['saved'] == true) {
+    if (saved == true) {
       _message(item == null ? 'Online class scheduled.' : 'Class updated.');
       await _load(showLoader: false);
-      final id = int.tryParse(result?['id']?.toString() ?? '');
-      if (item == null && result?['createAssessment'] == true && id != null && mounted) {
-        final changed = await Navigator.of(context).push<bool>(
-          MaterialPageRoute(
-            builder: (_) => TeacherAssessmentBuilderScreen(onlineClassId: id),
-          ),
-        );
-        if (changed == true) _message('Linked assessment created.');
-      }
     }
   }
 
@@ -365,18 +339,6 @@ class _OnlineClassesScreenState extends State<OnlineClassesScreen>
                       onPressed: () => _openZoom(item, start: true),
                       icon: const Icon(Icons.videocam_rounded),
                       label: const Text('Start')),
-                OutlinedButton.icon(
-                    onPressed: () => _openAttendance(item),
-                    icon: const Icon(Icons.fact_check_outlined),
-                    label: Text(_teacherView ? 'Attendance' : 'My Attendance')),
-                OutlinedButton.icon(
-                    onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => AssessmentsScreen(onlineClassId: item.id),
-                          ),
-                        ),
-                    icon: const Icon(Icons.assignment_turned_in_outlined),
-                    label: const Text('Tests')),
                 if (item.canManage)
                   OutlinedButton(
                       onPressed: () => _showForm(item),
@@ -417,7 +379,6 @@ class _OnlineClassFormState extends State<_OnlineClassForm> {
   String _recording = 'none';
   bool _loading = true;
   bool _saving = false;
-  bool _createAssessment = false;
   String? _error;
 
   @override
@@ -491,7 +452,7 @@ class _OnlineClassFormState extends State<_OnlineClassForm> {
       _error = null;
     });
     try {
-      final savedId = await OnlineClassApi.save({
+      await OnlineClassApi.save({
         'class_id': _classId,
         'section_id': _sectionId,
         'subject_id': _subjectId,
@@ -505,11 +466,7 @@ class _OnlineClassFormState extends State<_OnlineClassForm> {
         'join_before_host': false,
         'recording_setting': _recording,
       }, id: widget.item?.id);
-      if (mounted) Navigator.pop(context, {
-        'saved': true,
-        'id': savedId ?? widget.item?.id,
-        'createAssessment': _createAssessment,
-      });
+      if (mounted) Navigator.pop(context, true);
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
     } finally {
@@ -665,14 +622,6 @@ class _OnlineClassFormState extends State<_OnlineClassForm> {
                           title: const Text('Mute participants on entry'),
                           value: _muteUponEntry,
                           onChanged: (v) => setState(() => _muteUponEntry = v)),
-                      if (widget.item == null)
-                        CheckboxListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('Create a test for this class'),
-                          subtitle: const Text('Open AI/online/offline test builder after scheduling.'),
-                          value: _createAssessment,
-                          onChanged: (v) => setState(() => _createAssessment = v ?? false),
-                        ),
                       const SizedBox(height: 12),
                       FilledButton.icon(
                           onPressed: _saving ? null : _save,

@@ -111,78 +111,16 @@ class OnlineClassApi {
         .toList();
   }
 
-  static Future<int?> save(Map<String, dynamic> payload, {int? id}) async {
+  static Future<void> save(Map<String, dynamic> payload, {int? id}) async {
     final response = id == null
         ? await ApiService.rawPost('/api/online-classes', payload)
         : await ApiService.rawPatch('/api/online-classes/$id', payload);
     final decoded = _decode(response.body);
     _check(response.statusCode, decoded);
-    final value = _data(decoded);
-    if (value is Map) return int.tryParse(value['id']?.toString() ?? '');
-    return id;
   }
 
   static Future<void> cancel(int id) async {
     final response = await ApiService.rawDelete('/api/online-classes/$id');
-    final decoded = _decode(response.body);
-    _check(response.statusCode, decoded);
-  }
-
-  static Future<OnlineClassAttendanceReport> attendance(int id) async {
-    final response =
-        await ApiService.rawGet('/api/online-classes/$id/attendance');
-    final decoded = _decode(response.body);
-    _check(response.statusCode, decoded);
-    return OnlineClassAttendanceReport.fromJson(
-      Map<String, dynamic>.from(_data(decoded) as Map),
-    );
-  }
-
-  static Future<OnlineClassAttendanceReport> recalculateAttendance(
-      int id) async {
-    final response = await ApiService.rawPost(
-      '/api/online-classes/$id/attendance/recalculate',
-      const {},
-    );
-    final decoded = _decode(response.body);
-    _check(response.statusCode, decoded);
-    return OnlineClassAttendanceReport.fromJson(
-      Map<String, dynamic>.from(_data(decoded) as Map),
-    );
-  }
-
-  static Future<void> updateAttendanceStatus({
-    required int onlineClassId,
-    required int studentId,
-    String? status,
-    bool resetAutomatic = false,
-    String? notes,
-  }) async {
-    final response = await ApiService.rawPatch(
-      '/api/online-classes/$onlineClassId/attendance/$studentId',
-      {
-        if (resetAutomatic) 'reset_auto': true,
-        if (!resetAutomatic && status != null) 'status': status,
-        if (notes != null) 'notes': notes,
-      },
-    );
-    final decoded = _decode(response.body);
-    _check(response.statusCode, decoded);
-  }
-
-  static Future<void> matchAttendanceSession({
-    required int onlineClassId,
-    required int sessionId,
-    required int studentId,
-    bool rememberIdentity = true,
-  }) async {
-    final response = await ApiService.rawPost(
-      '/api/online-classes/$onlineClassId/attendance/sessions/$sessionId/match',
-      {
-        'student_id': studentId,
-        'remember_identity': rememberIdentity,
-      },
-    );
     final decoded = _decode(response.body);
     _check(response.statusCode, decoded);
   }
