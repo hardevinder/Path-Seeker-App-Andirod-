@@ -185,6 +185,14 @@ class StudentDrawerMenu extends StatelessWidget {
                 ),
                 _tile(
                   context: context,
+                  routeName: '/online-classes',
+                  icon: Icons.video_call_rounded,
+                  title: 'Online Classes',
+                  color: const Color(0xFF2D8CFF),
+                  subtitle: 'View and join Zoom classes',
+                ),
+                _tile(
+                  context: context,
                   routeName: '/student/library',
                   icon: Icons.local_library_rounded,
                   title: 'Library',

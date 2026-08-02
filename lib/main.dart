@@ -41,6 +41,7 @@ import 'screens/leave_page.dart';
 import 'screens/student_diary_screen.dart';
 import 'screens/student_messages_screen.dart';
 import 'screens/student_lesson_plans_screen.dart';
+import 'screens/online_classes_screen.dart';
 import 'screens/library_screen.dart';
 
 // teacher screens
@@ -276,6 +277,7 @@ class StudentApp extends StatelessWidget {
 
           // Teacher
           '/teacher': (context) => const TeacherDashboard(),
+          '/online-classes': (context) => const OnlineClassesScreen(),
           '/coordinator': (context) => const CoordinatorDashboard(),
           '/academic-coordinator': (context) => const CoordinatorDashboard(),
           '/coordinator/attendance-summary': (context) =>
@@ -308,7 +310,8 @@ class StudentApp extends StatelessWidget {
           '/driver': (context) => const DriverDashboardScreen(),
           '/examination': (context) => const ExaminationDashboardScreen(),
           '/frontoffice': (context) => const FrontOfficeDashboard(),
-          '/frontoffice/visitor-checkin': (context) => const VisitorCheckinScreen(),
+          '/frontoffice/visitor-checkin': (context) =>
+              const VisitorCheckinScreen(),
           '/my-visitors': (context) => const MyVisitorsScreen(),
 
           // Superadmin sub-pages

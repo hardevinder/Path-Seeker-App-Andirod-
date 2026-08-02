@@ -256,7 +256,8 @@ class TeacherDrawerMenu extends StatelessWidget {
                   context: context,
                   routeName: '/teacher/ptm',
                   icon: Icons.groups_2_rounded,
-                  title: isCoordinatorDrawer ? 'PTM Management' : 'PTM Feedback',
+                  title:
+                      isCoordinatorDrawer ? 'PTM Management' : 'PTM Feedback',
                   color: const Color(0xFF7C3AED),
                   subtitle: isCoordinatorDrawer
                       ? 'Class-wise PTM progress'
@@ -379,6 +380,14 @@ class TeacherDrawerMenu extends StatelessWidget {
                   icon: Icons.menu_book_rounded,
                   title: 'Lesson Plan',
                   color: const Color(0xFF0F766E),
+                ),
+                _tile(
+                  context: context,
+                  routeName: '/online-classes',
+                  icon: Icons.video_call_rounded,
+                  title: 'Online Classes',
+                  color: const Color(0xFF2D8CFF),
+                  subtitle: 'Schedule and start Zoom classes',
                 ),
                 _tile(
                   context: context,
