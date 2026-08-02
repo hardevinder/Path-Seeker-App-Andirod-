@@ -31,8 +31,8 @@ android {
         minSdk = flutter.minSdkVersion
         targetSdk = 36
 
-        versionCode = 66
-        versionName = "1.0.44"
+        versionCode = 67
+        versionName = "1.0.45"
 
         multiDexEnabled = true
 

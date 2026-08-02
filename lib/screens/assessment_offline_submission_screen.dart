@@ -60,7 +60,8 @@ class _AssessmentOfflineSubmissionScreenState
     );
     try {
       final result = await scanner.scanDocument();
-      final path = result.pdf?.uri.trim() ?? '';
+      final rawUri = result.pdf?.uri.trim() ?? '';
+      final path = _localPath(rawUri);
       if (path.isNotEmpty && await File(path).exists()) {
         setState(() => _paths.add(path));
         if (mounted) {
@@ -120,10 +121,27 @@ class _AssessmentOfflineSubmissionScreenState
     }
   }
 
+  String _localPath(String raw) {
+    if (raw.isEmpty) return '';
+    final uri = Uri.tryParse(raw);
+    if (uri != null && uri.scheme == 'file') {
+      try {
+        return uri.toFilePath();
+      } catch (_) {
+        return raw.replaceFirst(RegExp(r'^file://'), '');
+      }
+    }
+    return raw;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Submit Written Test')),
+      appBar: AppBar(
+        title: Text(widget.assessment.assessmentType == 'assignment'
+            ? 'Submit Assignment'
+            : 'Submit Written Test'),
+      ),
       body: Column(
         children: [
           Container(

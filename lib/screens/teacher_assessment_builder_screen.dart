@@ -9,10 +9,12 @@ import '../services/assessment_api.dart';
 class TeacherAssessmentBuilderScreen extends StatefulWidget {
   final Assessment? existing;
   final int? onlineClassId;
+  final String? initialAssessmentType;
   const TeacherAssessmentBuilderScreen({
     super.key,
     this.existing,
     this.onlineClassId,
+    this.initialAssessmentType,
   });
 
   @override
@@ -51,6 +53,16 @@ class _TeacherAssessmentBuilderScreenState
   void initState() {
     super.initState();
     final existing = widget.existing;
+    if (existing == null &&
+        const ['quiz', 'test', 'assignment', 'practice']
+            .contains(widget.initialAssessmentType)) {
+      _assessmentType = widget.initialAssessmentType!;
+      if (_assessmentType == 'assignment') {
+        _mode = 'offline';
+        _instructions.text =
+            'Complete the assignment and upload clear scanned pages or a PDF.';
+      }
+    }
     _onlineClass.text = '${widget.onlineClassId ?? existing?.onlineClassId ?? ''}';
     if (existing != null) {
       _title.text = existing.title;
@@ -241,7 +253,9 @@ class _TeacherAssessmentBuilderScreenState
     return Scaffold(
       appBar: AppBar(
           title: Text(widget.existing == null
-              ? 'Create Assessment'
+              ? (_assessmentType == 'assignment'
+                  ? 'Create Assignment'
+                  : 'Create Assessment')
               : 'Edit Assessment')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -476,7 +490,11 @@ class _TeacherAssessmentBuilderScreenState
                             child: CircularProgressIndicator(
                                 strokeWidth: 2, color: Colors.white))
                         : const Icon(Icons.save),
-                    label: Text(_saving ? 'Saving…' : 'Save Assessment'),
+                    label: Text(_saving
+                        ? 'Saving…'
+                        : _assessmentType == 'assignment'
+                            ? 'Save Assignment'
+                            : 'Save Assessment'),
                   ),
                   const SizedBox(height: 24),
                 ],

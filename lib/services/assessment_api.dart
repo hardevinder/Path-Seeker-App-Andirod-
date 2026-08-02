@@ -47,10 +47,16 @@ class AssessmentApi {
     };
   }
 
-  static Future<List<Assessment>> list({int? onlineClassId}) async {
-    final suffix = onlineClassId == null
-        ? ''
-        : '?online_class_id=${Uri.encodeQueryComponent('$onlineClassId')}';
+  static Future<List<Assessment>> list({
+    int? onlineClassId,
+    String? assessmentType,
+  }) async {
+    final params = <String, String>{
+      if (onlineClassId != null) 'online_class_id': '$onlineClassId',
+      if (assessmentType != null && assessmentType.trim().isNotEmpty)
+        'assessment_type': assessmentType.trim(),
+    };
+    final suffix = params.isEmpty ? '' : '?${Uri(queryParameters: params).query}';
     final response = await ApiService.rawGet('/api/assessments$suffix');
     final decoded = _decode(response.body);
     _check(response.statusCode, decoded);

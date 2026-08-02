@@ -5,7 +5,7 @@ publish_to: "none"
 # UPDATED for Play Store release
 # versionName = 1.0.44
 # versionCode = 66
-version: 1.0.44+66
+version: 1.0.45+67
 
 environment:
   sdk: ">=3.4.1 <4.0.0"

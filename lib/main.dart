@@ -280,6 +280,8 @@ class StudentApp extends StatelessWidget {
           '/teacher': (context) => const TeacherDashboard(),
           '/online-classes': (context) => const OnlineClassesScreen(),
           '/assessments': (context) => const AssessmentsScreen(),
+          '/teacher/assignments-hub': (context) =>
+              const AssessmentsScreen(assessmentType: 'assignment'),
           '/coordinator': (context) => const CoordinatorDashboard(),
           '/academic-coordinator': (context) => const CoordinatorDashboard(),
           '/coordinator/attendance-summary': (context) =>
@@ -462,7 +464,9 @@ class StudentApp extends StatelessWidget {
           '/contacts': (context) => const ContactListScreen(),
           '/fee-details': (context) => const StudentFeeScreen(),
           '/fees': (context) => const StudentFeeScreen(),
-          '/assignments': (context) => const StudentAssignmentsScreen(),
+          '/assignments': (context) =>
+              const AssessmentsScreen(assessmentType: 'assignment'),
+          '/legacy-assignments': (context) => const StudentAssignmentsScreen(),
           '/student/bus-live': (context) => const StudentBusLiveScreen(),
           '/teacher/bus-live': (context) => const StudentBusLiveScreen(),
           '/student/lesson-plans': (context) =>

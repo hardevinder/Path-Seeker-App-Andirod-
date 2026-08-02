@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../auth/role_manager.dart';
 import '../models/assessment_models.dart';
 import '../services/assessment_api.dart';
 import 'assessment_attempt_screen.dart';
@@ -13,7 +14,12 @@ import 'teacher_assessment_builder_screen.dart';
 
 class AssessmentsScreen extends StatefulWidget {
   final int? onlineClassId;
-  const AssessmentsScreen({super.key, this.onlineClassId});
+  final String? assessmentType;
+  const AssessmentsScreen({
+    super.key,
+    this.onlineClassId,
+    this.assessmentType,
+  });
 
   @override
   State<AssessmentsScreen> createState() => _AssessmentsScreenState();
@@ -36,20 +42,20 @@ class _AssessmentsScreenState extends State<AssessmentsScreen> {
     final prefs = await SharedPreferences.getInstance();
     final roles = <String>{};
     for (final key in ['activeRole', 'selectedRole', 'role', 'userRole']) {
-      final value = prefs.getString(key)?.trim().toLowerCase();
-      if (value != null && value.isNotEmpty) roles.add(value);
+      final value = AppRoles.normalize(prefs.getString(key));
+      if (value.isNotEmpty) roles.add(value);
     }
     final raw = prefs.getString('roles');
     if (raw != null) {
       try {
         final decoded = jsonDecode(raw);
         if (decoded is List) {
-          roles.addAll(decoded.map((e) => e.toString().toLowerCase()));
+          roles.addAll(decoded.map((e) => AppRoles.normalize(e.toString())));
         }
       } catch (_) {
         roles.addAll(raw
             .split(',')
-            .map((e) => e.trim().toLowerCase())
+            .map(AppRoles.normalize)
             .where((e) => e.isNotEmpty));
       }
     }
@@ -69,7 +75,10 @@ class _AssessmentsScreenState extends State<AssessmentsScreen> {
   Future<void> _load() async {
     if (mounted) setState(() => _loading = true);
     try {
-      _rows = await AssessmentApi.list(onlineClassId: widget.onlineClassId);
+      _rows = await AssessmentApi.list(
+        onlineClassId: widget.onlineClassId,
+        assessmentType: widget.assessmentType,
+      );
     } catch (e) {
       if (mounted) _snack(e.toString());
     } finally {
@@ -101,6 +110,7 @@ class _AssessmentsScreenState extends State<AssessmentsScreen> {
         builder: (_) => TeacherAssessmentBuilderScreen(
           existing: full,
           onlineClassId: widget.onlineClassId,
+          initialAssessmentType: widget.assessmentType,
         ),
       ),
     );
@@ -170,9 +180,11 @@ class _AssessmentsScreenState extends State<AssessmentsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.onlineClassId == null
-            ? 'Tests & Assessments'
-            : 'Class Tests'),
+        title: Text(widget.assessmentType == 'assignment'
+            ? 'Assignments'
+            : widget.onlineClassId == null
+                ? 'Tests & Assessments'
+                : 'Class Tests'),
         actions: [
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
         ],
@@ -208,7 +220,9 @@ class _AssessmentsScreenState extends State<AssessmentsScreen> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _filtered.isEmpty
-                    ? const _EmptyAssessmentState()
+                    ? _EmptyAssessmentState(
+                        assignmentOnly: widget.assessmentType == 'assignment',
+                      )
                     : RefreshIndicator(
                         onRefresh: _load,
                         child: ListView.builder(
@@ -225,7 +239,9 @@ class _AssessmentsScreenState extends State<AssessmentsScreen> {
           ? FloatingActionButton.extended(
               onPressed: () => _createOrEdit(),
               icon: const Icon(Icons.add),
-              label: const Text('Create Test'),
+              label: Text(widget.assessmentType == 'assignment'
+                  ? 'Create Assignment'
+                  : 'Create Test'),
             )
           : null,
     );
@@ -247,6 +263,8 @@ class _AssessmentsScreenState extends State<AssessmentsScreen> {
               children: [
                 _pill(row.mode == 'online' ? 'ONLINE' : 'WRITTEN',
                     row.mode == 'online' ? Colors.indigo : Colors.orange),
+                const SizedBox(width: 7),
+                _pill(row.assessmentType.toUpperCase(), Colors.deepPurple),
                 const SizedBox(width: 7),
                 _pill(row.status.replaceAll('_', ' ').toUpperCase(),
                     _statusColor(row.status)),
@@ -309,6 +327,23 @@ class _AssessmentsScreenState extends State<AssessmentsScreen> {
                         'Status: ${enrollment.status.replaceAll('_', ' ')}',
                         style: const TextStyle(fontWeight: FontWeight.w700)),
               ),
+              if (resultVisible &&
+                  enrollment.latestAttempt?.files.any(
+                        (file) => file.kind == 'corrected_submission',
+                      ) ==
+                      true) ...[
+                const SizedBox(height: 8),
+                ...enrollment.latestAttempt!.files
+                    .where((file) => file.kind == 'corrected_submission')
+                    .map((file) => OutlinedButton.icon(
+                          onPressed: () => AssessmentApi.downloadAndOpen(
+                            '/api/assessments/${row.id}/files/${file.id}',
+                            file.name,
+                          ),
+                          icon: const Icon(Icons.rate_review_outlined),
+                          label: const Text('Teacher Feedback File'),
+                        )),
+              ],
             ],
             const SizedBox(height: 12),
             Wrap(
@@ -322,25 +357,34 @@ class _AssessmentsScreenState extends State<AssessmentsScreen> {
                   label: const Text('Question Paper'),
                 ),
                 ...row.files
-                    .where((file) => file.kind == 'question_paper')
+                    .where((file) => const [
+                          'question_paper',
+                          'supporting_material',
+                        ].contains(file.kind))
                     .map((file) => OutlinedButton.icon(
                           onPressed: () => AssessmentApi.downloadAndOpen(
                               '/api/assessments/${row.id}/files/${file.id}',
                               file.name),
                           icon: const Icon(Icons.download),
-                          label: const Text('Attached Paper'),
+                          label: Text(file.kind == 'question_paper'
+                              ? 'Attached Paper'
+                              : file.name),
                         )),
                 if (_isStudent && row.canAttempt && row.mode == 'online')
                   FilledButton.icon(
                     onPressed: () => _attempt(row),
                     icon: const Icon(Icons.play_arrow_rounded),
-                    label: const Text('Attempt Test'),
+                    label: Text(row.assessmentType == 'assignment'
+                        ? 'Open Assignment'
+                        : 'Attempt Test'),
                   ),
                 if (_isStudent && row.canAttempt && row.mode == 'offline')
                   FilledButton.icon(
                     onPressed: () => _submitOffline(row),
                     icon: const Icon(Icons.document_scanner_outlined),
-                    label: const Text('Scan & Submit'),
+                    label: Text(row.assessmentType == 'assignment'
+                        ? 'Scan & Upload Work'
+                        : 'Scan & Submit'),
                   ),
                 if (row.canManage &&
                     const ['draft', 'scheduled'].contains(row.status)) ...[
@@ -430,22 +474,28 @@ class _AssessmentsScreenState extends State<AssessmentsScreen> {
 }
 
 class _EmptyAssessmentState extends StatelessWidget {
-  const _EmptyAssessmentState();
+  final bool assignmentOnly;
+  const _EmptyAssessmentState({this.assignmentOnly = false});
 
   @override
   Widget build(BuildContext context) => ListView(
-        children: const [
-          SizedBox(height: 100),
-          Icon(Icons.assignment_turned_in_outlined,
+        children: [
+          const SizedBox(height: 100),
+          const Icon(Icons.assignment_turned_in_outlined,
               size: 74, color: Colors.black26),
-          SizedBox(height: 16),
-          Text('No assessments available',
+          const SizedBox(height: 16),
+          Text(assignmentOnly
+              ? 'No assignments available'
+              : 'No assessments available',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-          SizedBox(height: 6),
-          Text('Published tests and written papers will appear here.',
+              style: const TextStyle(
+                  fontSize: 20, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 6),
+          Text(assignmentOnly
+              ? 'Published assignments will appear here.'
+              : 'Published tests and written papers will appear here.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.black54)),
+              style: const TextStyle(color: Colors.black54)),
         ],
       );
 }

@@ -1382,12 +1382,14 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
         );
         break;
       case '/teacher/assignments-hub':
+        Navigator.pushNamed(context, '/teacher/assignments-hub');
+        break;
       case '/teacher/student-remarks':
       case '/teacher/co-scholastic':
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '${route == '/teacher/assignments-hub' ? 'Assignments and assignment marking' : route == '/teacher/student-remarks' ? 'Student Remarks Entry' : 'Co-Scholastic Entry'} is available on web. Mobile page is not added yet.',
+              '${route == '/teacher/student-remarks' ? 'Student Remarks Entry' : 'Co-Scholastic Entry'} is available on web. Mobile page is not added yet.',
             ),
             behavior: SnackBarBehavior.floating,
           ),
