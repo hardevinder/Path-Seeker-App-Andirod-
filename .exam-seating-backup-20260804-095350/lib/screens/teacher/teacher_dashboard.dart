@@ -1100,11 +1100,6 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
         'route': '/teacher/ptm'
       },
       {
-        'label': 'Invigilation Duties',
-        'icon': Icons.assignment_ind_rounded,
-        'route': '/teacher/invigilation-duties'
-      },
-      {
         'label': 'Messages',
         'icon': Icons.forum_rounded,
         'route': '/teacher/messages',

@@ -59,8 +59,6 @@ import 'screens/teacher/teacher_marks_entry_screen.dart';
 import 'screens/teacher/teacher_lesson_plan_screen.dart';
 import 'screens/teacher/teacher_ptm_screen.dart';
 import 'screens/teacher/invigilation_duties_screen.dart';
-import 'screens/teacher/room_script_collections_screen.dart';
-import 'screens/teacher/evaluation_bundles_screen.dart';
 
 // New role dashboards
 import 'screens/superadmin/superadmin_dashboard.dart';
@@ -74,7 +72,6 @@ import 'screens/transport/transport_dashboard.dart';
 import 'screens/driver/driver_dashboard.dart';
 import 'screens/student/student_bus_live_screen.dart';
 import 'screens/student/student_exam_seat_screen.dart';
-import 'screens/student/student_answer_script_status_screen.dart';
 import 'screens/examination/examination_dashboard.dart';
 
 // Superadmin sub-pages
@@ -434,10 +431,6 @@ class StudentApp extends StatelessWidget {
           '/teacher/ptm': (context) => const TeacherPtmScreen(),
           '/teacher/invigilation-duties': (context) =>
               const InvigilationDutiesScreen(),
-          '/teacher/room-script-collections': (context) =>
-              const RoomScriptCollectionsScreen(),
-          '/teacher/evaluation-bundles': (context) =>
-              const EvaluationBundlesScreen(),
 
           // ✅ Teacher: approve/reject STUDENT leave requests
           '/teacher/leave-requests': (context) =>
@@ -480,8 +473,6 @@ class StudentApp extends StatelessWidget {
           '/legacy-assignments': (context) => const StudentAssignmentsScreen(),
           '/student/bus-live': (context) => const StudentBusLiveScreen(),
           '/student/exam-seat': (context) => const StudentExamSeatScreen(),
-          '/student/answer-script-status': (context) =>
-              const StudentAnswerScriptStatusScreen(),
           '/teacher/bus-live': (context) => const StudentBusLiveScreen(),
           '/student/lesson-plans': (context) =>
               const StudentLessonPlansScreen(),

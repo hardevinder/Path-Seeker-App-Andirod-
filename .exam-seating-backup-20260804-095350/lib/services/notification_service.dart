@@ -12,8 +12,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../firebase_options.dart';
 import '../main.dart'; // navigatorKey
 import '../screens/student/student_bus_live_screen.dart';
-import '../screens/student/student_exam_seat_screen.dart';
-import '../screens/teacher/invigilation_duties_screen.dart';
 
 class NotificationService {
   static bool _firebaseEnsured = false;
@@ -203,23 +201,6 @@ class NotificationService {
         type == 'busapproaching') {
       navigatorKey.currentState?.push(
         MaterialPageRoute(builder: (_) => const StudentBusLiveScreen()),
-      );
-      return;
-    }
-
-    if (normalizedScreen == 'examseatscreen' ||
-        type == 'exam_seat_published' ||
-        type == 'exam_attendance_updated') {
-      navigatorKey.currentState?.push(
-        MaterialPageRoute(builder: (_) => const StudentExamSeatScreen()),
-      );
-      return;
-    }
-
-    if (normalizedScreen == 'invigilationdutiesscreen' ||
-        type == 'exam_invigilation_duty') {
-      navigatorKey.currentState?.push(
-        MaterialPageRoute(builder: (_) => const InvigilationDutiesScreen()),
       );
       return;
     }

@@ -272,24 +272,6 @@ class TeacherDrawerMenu extends StatelessWidget {
                     color: const Color(0xFFDC2626),
                     subtitle: 'Assigned rooms and exam attendance',
                   ),
-                if (!isCoordinatorDrawer)
-                  _tile(
-                    context: context,
-                    routeName: '/teacher/room-script-collections',
-                    icon: Icons.inventory_2_rounded,
-                    title: 'Room Script Collection',
-                    color: const Color(0xFFB45309),
-                    subtitle: 'Count and hand over answer scripts',
-                  ),
-                if (!isCoordinatorDrawer)
-                  _tile(
-                    context: context,
-                    routeName: '/teacher/evaluation-bundles',
-                    icon: Icons.fact_check_rounded,
-                    title: 'Evaluation Bundles',
-                    color: const Color(0xFF047857),
-                    subtitle: 'Checking, rechecking and returns',
-                  ),
                 if (isCoordinatorDrawer)
                   _tile(
                     context: context,

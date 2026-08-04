@@ -177,22 +177,6 @@ class StudentDrawerMenu extends StatelessWidget {
                 ),
                 _tile(
                   context: context,
-                  routeName: '/student/exam-seat',
-                  icon: Icons.event_seat_rounded,
-                  title: 'My Exam Seat',
-                  color: const Color(0xFF7C3AED),
-                  subtitle: 'Room, seat and exam attendance',
-                ),
-                _tile(
-                  context: context,
-                  routeName: '/student/answer-script-status',
-                  icon: Icons.description_rounded,
-                  title: 'Answer Script Status',
-                  color: const Color(0xFFB45309),
-                  subtitle: 'Checking and rechecking updates',
-                ),
-                _tile(
-                  context: context,
                   routeName: '/student/lesson-plans',
                   icon: Icons.auto_stories_rounded,
                   title: 'Lesson Plans',
@@ -229,6 +213,14 @@ class StudentDrawerMenu extends StatelessWidget {
                   icon: Icons.calendar_today_rounded,
                   title: 'Time Table',
                   color: const Color(0xFF38EF7D),
+                ),
+                _tile(
+                  context: context,
+                  routeName: '/student/academic-calendar',
+                  icon: Icons.calendar_month_rounded,
+                  title: 'Academic Calendar',
+                  color: const Color(0xFF7C3AED),
+                  subtitle: 'Holidays, exams, PTMs and events',
                 ),
                 _tile(
                   context: context,

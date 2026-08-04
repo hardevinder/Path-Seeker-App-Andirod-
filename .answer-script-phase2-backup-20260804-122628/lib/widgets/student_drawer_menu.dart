@@ -185,14 +185,6 @@ class StudentDrawerMenu extends StatelessWidget {
                 ),
                 _tile(
                   context: context,
-                  routeName: '/student/answer-script-status',
-                  icon: Icons.description_rounded,
-                  title: 'Answer Script Status',
-                  color: const Color(0xFFB45309),
-                  subtitle: 'Checking and rechecking updates',
-                ),
-                _tile(
-                  context: context,
                   routeName: '/student/lesson-plans',
                   icon: Icons.auto_stories_rounded,
                   title: 'Lesson Plans',

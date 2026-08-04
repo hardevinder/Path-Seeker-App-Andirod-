@@ -2102,13 +2102,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           'route': '/student/lesson-plans',
           'badge': 'Open',
         },
-      if (!isTeacher)
-        {
-          'label': 'My Exam Seat',
-          'icon': Icons.event_seat_rounded,
-          'route': '/student/exam-seat',
-          'badge': 'View',
-        },
       {
         'label': 'Diary',
         'icon': Icons.menu_book_rounded,
