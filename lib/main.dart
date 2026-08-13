@@ -61,6 +61,7 @@ import 'screens/teacher/teacher_ptm_screen.dart';
 import 'screens/teacher/invigilation_duties_screen.dart';
 import 'screens/teacher/room_script_collections_screen.dart';
 import 'screens/teacher/evaluation_bundles_screen.dart';
+import 'screens/department/department_management_screen.dart';
 
 // New role dashboards
 import 'screens/superadmin/superadmin_dashboard.dart';
@@ -75,6 +76,7 @@ import 'screens/driver/driver_dashboard.dart';
 import 'screens/student/student_bus_live_screen.dart';
 import 'screens/student/student_exam_seat_screen.dart';
 import 'screens/student/student_answer_script_status_screen.dart';
+import 'screens/student/student_department_activities_screen.dart';
 import 'screens/examination/examination_dashboard.dart';
 
 // Superadmin sub-pages
@@ -283,6 +285,10 @@ class StudentApp extends StatelessWidget {
 
           // Teacher
           '/teacher': (context) => const TeacherDashboard(),
+          '/department-management': (context) =>
+              const DepartmentManagementScreen(),
+          '/student/activities-achievements': (context) =>
+              const StudentDepartmentActivitiesScreen(),
           '/online-classes': (context) => const OnlineClassesScreen(),
           '/assessments': (context) => const AssessmentsScreen(),
           '/teacher/assignments-hub': (context) =>

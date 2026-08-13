@@ -3,6 +3,7 @@ import 'dart:convert';
 class AppRoles {
   static const String student = 'student';
   static const String teacher = 'teacher';
+  static const String departmentHod = 'department_hod';
   static const String coordinator = 'academic_coordinator';
   static const String superadmin = 'superadmin';
   static const String accounts = 'accounts';
@@ -21,6 +22,7 @@ class AppRoles {
     driver,
     examination,
     coordinator,
+    departmentHod,
     teacher,
     student,
   ];
@@ -61,6 +63,10 @@ class AppRoles {
       case 'academic coordinator':
       case 'academic_coordinator':
         return coordinator;
+      case 'department hod':
+      case 'department_hod':
+      case 'hod':
+        return departmentHod;
       case 'teacher':
       case 'faculty':
         return teacher;
@@ -79,6 +85,7 @@ class AppRoles {
   static bool isStaff(String role) {
     final normalized = normalize(role);
     return normalized == teacher ||
+        normalized == departmentHod ||
         normalized == coordinator ||
         normalized == superadmin ||
         normalized == accounts ||
@@ -107,6 +114,8 @@ class AppRoles {
         return 'Front Office';
       case coordinator:
         return 'Coordinator';
+      case departmentHod:
+        return 'Department HOD';
       case teacher:
         return 'Teacher';
       case student:
@@ -140,6 +149,8 @@ class AppRoles {
         return '/frontoffice';
       case coordinator:
         return '/coordinator';
+      case departmentHod:
+        return '/department-management';
       case teacher:
         return '/teacher';
       case student:

@@ -410,6 +410,14 @@ class TeacherDrawerMenu extends StatelessWidget {
                 ),
                 _tile(
                   context: context,
+                  routeName: '/department-management',
+                  icon: Icons.apartment_rounded,
+                  title: 'Department Management',
+                  color: const Color(0xFF4F46E5),
+                  subtitle: 'Tasks, duties, inventory, events & academics',
+                ),
+                _tile(
+                  context: context,
                   routeName: '/online-classes',
                   icon: Icons.video_call_rounded,
                   title: 'Online Classes',

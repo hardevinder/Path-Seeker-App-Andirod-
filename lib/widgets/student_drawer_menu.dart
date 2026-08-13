@@ -193,6 +193,14 @@ class StudentDrawerMenu extends StatelessWidget {
                 ),
                 _tile(
                   context: context,
+                  routeName: '/student/activities-achievements',
+                  icon: Icons.emoji_events_rounded,
+                  title: 'Activities & Achievements',
+                  color: const Color(0xFFD97706),
+                  subtitle: 'Competitions, positions and certificates',
+                ),
+                _tile(
+                  context: context,
                   routeName: '/student/lesson-plans',
                   icon: Icons.auto_stories_rounded,
                   title: 'Lesson Plans',

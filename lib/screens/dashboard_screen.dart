@@ -2104,6 +2104,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
         },
       if (!isTeacher)
         {
+          'label': 'Achievements',
+          'icon': Icons.emoji_events_rounded,
+          'route': '/student/activities-achievements',
+          'badge': 'View',
+        },
+      if (!isTeacher)
+        {
           'label': 'My Exam Seat',
           'icon': Icons.event_seat_rounded,
           'route': '/student/exam-seat',

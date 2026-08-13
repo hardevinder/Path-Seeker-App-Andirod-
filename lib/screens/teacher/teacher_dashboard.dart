@@ -1162,6 +1162,11 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
         'route': '/teacher/lesson-plan'
       },
       {
+        'label': 'Department',
+        'icon': Icons.apartment_rounded,
+        'route': '/department-management'
+      },
+      {
         'label': 'Assignments',
         'icon': Icons.assignment_rounded,
         'route': '/teacher/assignments-hub'
