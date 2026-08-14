@@ -119,4 +119,56 @@ class DocumentVaultApi {
     await file.writeAsBytes(response.bodyBytes, flush: true);
     return file.path;
   }
+
+  static Future<Map<String, dynamic>> officialMine(String scope) async {
+    final encoded = Uri.encodeQueryComponent(scope);
+    final response = await ApiService.rawGet('/document-vault/official/me?scope=$encoded');
+    final decoded = _decode(response);
+    return decoded is Map
+        ? Map<String, dynamic>.from(decoded)
+        : <String, dynamic>{};
+  }
+
+  static Future<Map<String, dynamic>> acknowledgeOfficial(int documentId) async {
+    final response = await ApiService.rawPatch(
+      '/document-vault/official/$documentId/acknowledge',
+      <String, dynamic>{},
+    );
+    final decoded = _decode(response);
+    return decoded is Map
+        ? Map<String, dynamic>.from(decoded)
+        : <String, dynamic>{};
+  }
+
+  static Future<String> downloadOfficialToTemp({
+    required int documentId,
+    required String scope,
+    required String suggestedName,
+  }) async {
+    final uri = Uri.parse('${ApiService.baseUrl}/document-vault/official/$documentId/download')
+        .replace(queryParameters: {'scope': scope});
+    final response = await http.get(uri, headers: {
+      'Authorization': 'Bearer ${await _token()}',
+      'Accept': '*/*',
+    }).timeout(const Duration(seconds: 60));
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      _decode(response);
+    }
+
+    final dir = await getTemporaryDirectory();
+    var name = suggestedName.trim();
+    if (name.isEmpty) name = 'official-document-$documentId';
+    name = name.replaceAll(RegExp(r'[^A-Za-z0-9._ -]'), '_');
+    if (p.extension(name).isEmpty) {
+      final contentType = response.headers['content-type'] ?? '';
+      if (contentType.contains('pdf')) name = '$name.pdf';
+      if (contentType.contains('jpeg')) name = '$name.jpg';
+      if (contentType.contains('png')) name = '$name.png';
+    }
+    final file = File(p.join(dir.path, name));
+    await file.writeAsBytes(response.bodyBytes, flush: true);
+    return file.path;
+  }
+
 }

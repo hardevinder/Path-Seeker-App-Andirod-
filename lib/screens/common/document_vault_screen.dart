@@ -592,6 +592,11 @@ class _DocumentVaultScreenState extends State<DocumentVaultScreen> {
         title: const Text('My Document Vault'),
         actions: [
           IconButton(
+            onPressed: () => Navigator.pushNamed(context, '/official-documents'),
+            tooltip: 'Issued to Me',
+            icon: const Icon(Icons.mark_email_unread_outlined),
+          ),
+          IconButton(
               onPressed: _loading ? null : _load,
               tooltip: 'Refresh',
               icon: const Icon(Icons.refresh)),
@@ -665,6 +670,33 @@ class _DocumentVaultScreenState extends State<DocumentVaultScreen> {
                               ),
                             ),
                           ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Card(
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          side: BorderSide(color: Colors.indigo.shade100),
+                        ),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 8),
+                          leading: CircleAvatar(
+                            backgroundColor: Colors.indigo.shade50,
+                            child: Icon(Icons.mark_email_unread_outlined,
+                                color: Colors.indigo.shade700),
+                          ),
+                          title: const Text(
+                            'Documents Issued to Me',
+                            style: TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          subtitle: const Text(
+                            'Official letters, notices, certificates & acknowledgements',
+                          ),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () =>
+                              Navigator.pushNamed(context, '/official-documents'),
                         ),
                       ),
                       const SizedBox(height: 14),

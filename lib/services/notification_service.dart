@@ -196,6 +196,12 @@ class NotificationService {
       navigatorKey.currentState?.pushNamed('/my-visitors');
       return;
     }
+    if (normalizedScreen == 'documentvaultscreen' ||
+        normalizedScreen == 'officialissueddocumentsscreen' ||
+        type == 'official_document_issued') {
+      navigatorKey.currentState?.pushNamed('/official-documents');
+      return;
+    }
     if (normalizedScreen == 'studentbuslive' ||
         normalizedScreen == 'bustracking' ||
         normalizedScreen == 'studentbustracking' ||

@@ -418,6 +418,14 @@ class TeacherDrawerMenu extends StatelessWidget {
                 ),
                 _tile(
                   context: context,
+                  routeName: '/anecdotal-records',
+                  icon: Icons.fact_check_outlined,
+                  title: 'Anecdotal Records',
+                  color: const Color(0xFF0F766E),
+                  subtitle: 'Student observations, ratings & recognition',
+                ),
+                _tile(
+                  context: context,
                   routeName: '/department-management',
                   icon: Icons.apartment_rounded,
                   title: 'Department Management',

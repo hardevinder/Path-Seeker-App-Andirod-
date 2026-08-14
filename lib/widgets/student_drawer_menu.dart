@@ -209,6 +209,14 @@ class StudentDrawerMenu extends StatelessWidget {
                 ),
                 _tile(
                   context: context,
+                  routeName: '/anecdotal-records',
+                  icon: Icons.auto_awesome_outlined,
+                  title: 'My Growth & Recognition',
+                  color: const Color(0xFF7C3AED),
+                  subtitle: 'Shared observations and school recognition',
+                ),
+                _tile(
+                  context: context,
                   routeName: '/student/lesson-plans',
                   icon: Icons.auto_stories_rounded,
                   title: 'Lesson Plans',
