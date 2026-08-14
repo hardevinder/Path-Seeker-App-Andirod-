@@ -9,7 +9,6 @@ import '../models/assessment_models.dart';
 import '../services/assessment_api.dart';
 import 'assessment_attempt_screen.dart';
 import 'assessment_offline_submission_screen.dart';
-import 'assessment_result_screen.dart';
 import 'assessment_submissions_screen.dart';
 import 'teacher_assessment_builder_screen.dart';
 
@@ -371,15 +370,6 @@ class _AssessmentsScreenState extends State<AssessmentsScreen> {
                               ? 'Attached Paper'
                               : file.name),
                         )),
-                if (_isStudent && resultVisible)
-                  FilledButton.tonalIcon(
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => AssessmentResultScreen(assessment: row)),
-                    ),
-                    icon: const Icon(Icons.insights_outlined),
-                    label: const Text('View Full Result'),
-                  ),
                 if (_isStudent && row.canAttempt && row.mode == 'online')
                   FilledButton.icon(
                     onPressed: () => _attempt(row),

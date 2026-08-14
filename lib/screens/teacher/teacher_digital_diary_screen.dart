@@ -1241,15 +1241,23 @@ class _DiaryCreateTabState extends State<_DiaryCreateTab> {
     final scanner = DocumentScanner(
       options: DocumentScannerOptions(
         documentFormats: const {DocumentFormat.pdf},
-        mode: ScannerMode.full,
-        pageLimit: 20,
+        // Full mode runs additional ML image-cleaning while the PDF is being
+        // created.  On lower-memory Android devices that can kill the host
+        // process as the scanner activity returns.  Base mode still provides
+        // capture, auto-rotation, crop, page ordering and PDF generation.
+        mode: ScannerMode.base,
+        pageLimit: 10,
         isGalleryImport: false,
       ),
     );
 
     try {
       final result = await scanner.scanDocument();
-      final pdfPath = result.pdf?.uri.trim() ?? '';
+      final rawUri = result.pdf?.uri.trim() ?? '';
+      final uri = Uri.tryParse(rawUri);
+      final pdfPath = uri?.scheme == 'file'
+          ? uri!.toFilePath()
+          : rawUri.replaceFirst(RegExp(r'^file://'), '');
       if (pdfPath.isEmpty) return;
 
       final file = File(pdfPath);

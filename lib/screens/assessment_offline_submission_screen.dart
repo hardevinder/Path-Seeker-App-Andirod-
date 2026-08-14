@@ -53,8 +53,10 @@ class _AssessmentOfflineSubmissionScreenState
     final scanner = DocumentScanner(
       options: DocumentScannerOptions(
         documentFormats: const {DocumentFormat.pdf},
-        mode: ScannerMode.full,
-        pageLimit: 40,
+        // Avoid the full ML cleanup pipeline: its native memory spike can
+        // terminate the app when control returns from the scanner activity.
+        mode: ScannerMode.base,
+        pageLimit: 20,
         isGalleryImport: true,
       ),
     );

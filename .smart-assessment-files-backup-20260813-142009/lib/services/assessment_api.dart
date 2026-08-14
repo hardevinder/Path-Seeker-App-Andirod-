@@ -197,36 +197,6 @@ class AssessmentApi {
     _check(response.statusCode, decoded);
   }
 
-  static Future<AssessmentAttempt> teacherScan({
-    required int assessmentId,
-    required int studentId,
-    required List<String> paths,
-    bool runAi = true,
-  }) async {
-    final request = http.MultipartRequest(
-      'POST',
-      Uri.parse('${ApiService.baseUrl}/api/assessments/$assessmentId/submissions/$studentId/teacher-scan'),
-    );
-    request.headers.addAll(await _headers(json: false));
-    request.fields['run_ai'] = runAi ? 'true' : 'false';
-    for (final path in paths) {
-      request.files.add(await http.MultipartFile.fromPath('submission_files', path));
-    }
-    final response = await http.Response.fromStream(
-        await request.send().timeout(const Duration(seconds: 180)));
-    final decoded = _decode(response.body);
-    _check(response.statusCode, decoded);
-    final data = _data(decoded);
-    return AssessmentAttempt.fromJson(Map<String, dynamic>.from(data as Map));
-  }
-
-  static Future<void> rerunScanAi(int assessmentId, int studentId) async {
-    final response = await ApiService.rawPost(
-        '/api/assessments/$assessmentId/submissions/$studentId/ai-evaluate', {});
-    final decoded = _decode(response.body);
-    _check(response.statusCode, decoded);
-  }
-
   static Future<List<AssessmentSubmission>> submissions(int id) async {
     final response = await ApiService.rawGet('/api/assessments/$id/submissions');
     final decoded = _decode(response.body);

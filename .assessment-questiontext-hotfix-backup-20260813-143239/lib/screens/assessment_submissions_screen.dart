@@ -58,9 +58,9 @@ class _AssessmentSubmissionsScreenState extends State<AssessmentSubmissionsScree
     final scanner = DocumentScanner(
       options: DocumentScannerOptions(
         documentFormats: const {DocumentFormat.pdf},
-        mode: ScannerMode.base,
-        pageLimit: 10,
-        isGalleryImport: false,
+        mode: ScannerMode.full,
+        pageLimit: 60,
+        isGalleryImport: true,
       ),
     );
     try {
@@ -189,7 +189,7 @@ class _AssessmentSubmissionsScreenState extends State<AssessmentSubmissionsScree
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(children: [
-                                Expanded(child: Text('Q${index + 1}. ${q?.text ?? 'Question'}', style: const TextStyle(fontWeight: FontWeight.w700))),
+                                Expanded(child: Text('Q${index + 1}. ${q?.questionText ?? 'Question'}', style: const TextStyle(fontWeight: FontWeight.w700))),
                                 if (answer.aiReviewRequired) const Chip(avatar: Icon(Icons.warning_amber, size: 16), label: Text('Review')),
                               ]),
                               if (answer.aiDetectedText.isNotEmpty) Padding(

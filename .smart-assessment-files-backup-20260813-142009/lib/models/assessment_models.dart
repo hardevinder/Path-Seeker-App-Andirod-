@@ -215,12 +215,6 @@ class AssessmentAttempt {
   final String? feedback;
   final List<AssessmentAnswer> answers;
   final List<AssessmentFileItem> files;
-  final String submissionSource;
-  final String aiEvaluationStatus;
-  final double? aiConfidence;
-  final Map<String, dynamic>? aiSummary;
-  final List<Map<String, dynamic>> remedials;
-  final bool teacherReviewRequired;
 
   const AssessmentAttempt({
     required this.id,
@@ -233,12 +227,6 @@ class AssessmentAttempt {
     this.feedback,
     required this.answers,
     required this.files,
-    required this.submissionSource,
-    required this.aiEvaluationStatus,
-    this.aiConfidence,
-    this.aiSummary,
-    required this.remedials,
-    required this.teacherReviewRequired,
   });
 
   factory AssessmentAttempt.fromJson(Map<String, dynamic> json) =>
@@ -253,12 +241,6 @@ class AssessmentAttempt {
         feedback: json['teacher_feedback']?.toString(),
         answers: _mapList(json['answers'], AssessmentAnswer.fromJson),
         files: _mapList(json['files'], AssessmentFileItem.fromJson),
-        submissionSource: json['submission_source']?.toString() ?? 'online',
-        aiEvaluationStatus: json['ai_evaluation_status']?.toString() ?? 'not_started',
-        aiConfidence: _nullableDouble(json['ai_confidence']),
-        aiSummary: json['ai_summary'] is Map ? Map<String, dynamic>.from(json['ai_summary'] as Map) : null,
-        remedials: json['remedials'] is List ? (json['remedials'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList() : const [],
-        teacherReviewRequired: json['teacher_review_required'] == true,
       );
 }
 
@@ -269,12 +251,6 @@ class AssessmentAnswer {
   final String answerText;
   final double? awardedMarks;
   final String teacherRemark;
-  final String aiDetectedText;
-  final double? aiAwardedMarks;
-  final String aiRemark;
-  final double? aiConfidence;
-  final bool aiReviewRequired;
-  final Map<String, dynamic>? aiMeta;
   final AssessmentQuestion? question;
 
   const AssessmentAnswer({
@@ -284,12 +260,6 @@ class AssessmentAnswer {
     required this.answerText,
     this.awardedMarks,
     required this.teacherRemark,
-    required this.aiDetectedText,
-    this.aiAwardedMarks,
-    required this.aiRemark,
-    this.aiConfidence,
-    required this.aiReviewRequired,
-    this.aiMeta,
     this.question,
   });
 
@@ -301,12 +271,6 @@ class AssessmentAnswer {
         answerText: json['answer_text']?.toString() ?? '',
         awardedMarks: _nullableDouble(json['awarded_marks']),
         teacherRemark: json['teacher_remark']?.toString() ?? '',
-        aiDetectedText: json['ai_detected_text']?.toString() ?? '',
-        aiAwardedMarks: _nullableDouble(json['ai_awarded_marks']),
-        aiRemark: json['ai_remark']?.toString() ?? '',
-        aiConfidence: _nullableDouble(json['ai_confidence']),
-        aiReviewRequired: json['ai_review_required'] == true,
-        aiMeta: json['ai_meta'] is Map ? Map<String, dynamic>.from(json['ai_meta'] as Map) : null,
         question: json['question'] is Map
             ? AssessmentQuestion.fromJson(
                 Map<String, dynamic>.from(json['question'] as Map))
