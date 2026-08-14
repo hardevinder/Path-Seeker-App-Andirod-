@@ -201,14 +201,6 @@ class StudentDrawerMenu extends StatelessWidget {
                 ),
                 _tile(
                   context: context,
-                  routeName: '/document-vault',
-                  icon: Icons.shield_outlined,
-                  title: 'My Documents',
-                  color: const Color(0xFF1D4ED8),
-                  subtitle: 'DOB, Aadhaar, previous school & certificates',
-                ),
-                _tile(
-                  context: context,
                   routeName: '/student/lesson-plans',
                   icon: Icons.auto_stories_rounded,
                   title: 'Lesson Plans',

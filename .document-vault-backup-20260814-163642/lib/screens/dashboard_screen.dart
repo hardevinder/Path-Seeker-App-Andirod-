@@ -2111,13 +2111,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         },
       if (!isTeacher)
         {
-          'label': 'My Documents',
-          'icon': Icons.shield_outlined,
-          'route': '/document-vault',
-          'badge': 'Vault',
-        },
-      if (!isTeacher)
-        {
           'label': 'My Exam Seat',
           'icon': Icons.event_seat_rounded,
           'route': '/student/exam-seat',

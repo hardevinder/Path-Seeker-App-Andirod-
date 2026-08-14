@@ -410,14 +410,6 @@ class TeacherDrawerMenu extends StatelessWidget {
                 ),
                 _tile(
                   context: context,
-                  routeName: '/document-vault',
-                  icon: Icons.shield_outlined,
-                  title: 'My Documents',
-                  color: const Color(0xFF1D4ED8),
-                  subtitle: 'Qualifications, certificates & secure records',
-                ),
-                _tile(
-                  context: context,
                   routeName: '/department-management',
                   icon: Icons.apartment_rounded,
                   title: 'Department Management',

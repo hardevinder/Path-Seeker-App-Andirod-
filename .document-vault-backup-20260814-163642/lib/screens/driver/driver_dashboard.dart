@@ -118,20 +118,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                   color: Colors.orange)
             else
               ..._buses.map(_busCard),
-            if (!_loading && _error == null) ...[
-              const SizedBox(height: 12),
-              SizedBox(
-                height: 56,
-                child: OutlinedButton.icon(
-                  onPressed: () => Navigator.pushNamed(context, '/document-vault'),
-                  icon: const Icon(Icons.shield_outlined, size: 26),
-                  label: const Text('MY DOCUMENTS',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                ),
-              ),
-            ],
             if (!_loading && _error == null && _buses.isNotEmpty) ...[
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               SizedBox(
                 height: 58,
                 child: FilledButton.icon(

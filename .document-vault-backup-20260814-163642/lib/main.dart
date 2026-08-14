@@ -113,7 +113,6 @@ import 'screens/admin/role_feature_screens.dart';
 import 'screens/frontoffice/frontoffice_dashboard.dart';
 import 'screens/frontoffice/visitor_checkin_screen.dart';
 import 'screens/my_visitors_screen.dart';
-import 'screens/common/document_vault_screen.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -329,7 +328,6 @@ class StudentApp extends StatelessWidget {
           '/frontoffice/visitor-checkin': (context) =>
               const VisitorCheckinScreen(),
           '/my-visitors': (context) => const MyVisitorsScreen(),
-          '/document-vault': (context) => const DocumentVaultScreen(),
 
           // Superadmin sub-pages
           '/superadmin/school-settings': (context) =>
