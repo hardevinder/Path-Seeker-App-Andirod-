@@ -209,6 +209,14 @@ class StudentDrawerMenu extends StatelessWidget {
                 ),
                 _tile(
                   context: context,
+                  routeName: '/student-health',
+                  icon: Icons.health_and_safety_rounded,
+                  title: 'My Health & Growth',
+                  color: const Color(0xFF0F766E),
+                  subtitle: 'Height, weight, screenings & health profile',
+                ),
+                _tile(
+                  context: context,
                   routeName: '/anecdotal-records',
                   icon: Icons.auto_awesome_outlined,
                   title: 'My Growth & Recognition',

@@ -77,6 +77,7 @@ import 'screens/student/student_bus_live_screen.dart';
 import 'screens/student/student_exam_seat_screen.dart';
 import 'screens/student/student_answer_script_status_screen.dart';
 import 'screens/student/student_department_activities_screen.dart';
+import 'screens/student/student_health_growth_screen.dart';
 import 'screens/examination/examination_dashboard.dart';
 
 // Superadmin sub-pages
@@ -335,6 +336,7 @@ class StudentApp extends StatelessWidget {
           '/official-documents': (context) =>
               const OfficialIssuedDocumentsScreen(),
           '/anecdotal-records': (context) => const AnecdotalRecordsScreen(),
+          '/student-health': (context) => const StudentHealthGrowthScreen(),
 
           // Superadmin sub-pages
           '/superadmin/school-settings': (context) =>
