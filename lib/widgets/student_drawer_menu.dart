@@ -225,6 +225,22 @@ class StudentDrawerMenu extends StatelessWidget {
                 ),
                 _tile(
                   context: context,
+                  routeName: '/daily-readiness',
+                  icon: Icons.check_circle_outline_rounded,
+                  title: 'My Daily Readiness',
+                  color: const Color(0xFF0E7490),
+                  subtitle: 'Shared uniform, hygiene & tiffin record',
+                ),
+                _tile(
+                  context: context,
+                  routeName: '/lost-found',
+                  icon: Icons.search_rounded,
+                  title: 'Lost & Found',
+                  color: const Color(0xFF7C3AED),
+                  subtitle: 'View found items, report lost & submit a claim',
+                ),
+                _tile(
+                  context: context,
                   routeName: '/student/lesson-plans',
                   icon: Icons.auto_stories_rounded,
                   title: 'Lesson Plans',

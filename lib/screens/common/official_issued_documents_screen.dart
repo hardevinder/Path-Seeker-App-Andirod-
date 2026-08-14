@@ -203,8 +203,7 @@ class _OfficialIssuedDocumentsScreenState
     return DateFormat('dd MMM yyyy').format(parsed);
   }
 
-  Widget _summaryCard(
-      String label, dynamic value, IconData icon, Color color) {
+  Widget _summaryCard(String label, dynamic value, IconData icon, Color color) {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.all(12),
@@ -231,8 +230,8 @@ class _OfficialIssuedDocumentsScreenState
 
   Widget _documentCard(Map<String, dynamic> doc) {
     final status = (doc['status'] ?? '').toString().toLowerCase();
-    final confidential = doc['confidential'] == true ||
-        doc['confidential']?.toString() == '1';
+    final confidential =
+        doc['confidential'] == true || doc['confidential']?.toString() == '1';
     final ackRequired = doc['acknowledgement_required'] == true ||
         doc['acknowledgement_required']?.toString() == '1';
     final canAck = doc['can_acknowledge'] == true ||
@@ -339,7 +338,8 @@ class _OfficialIssuedDocumentsScreenState
                   ),
                 if ((issuer['name'] ?? '').toString().isNotEmpty)
                   Chip(
-                    avatar: const Icon(Icons.account_balance_outlined, size: 16),
+                    avatar:
+                        const Icon(Icons.account_balance_outlined, size: 16),
                     label: Text('Issued by ${issuer['name']}'),
                     backgroundColor: Colors.grey.shade100,
                   ),
@@ -365,9 +365,10 @@ class _OfficialIssuedDocumentsScreenState
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: id == null || _busyId == id || status == 'revoked'
-                        ? null
-                        : () => _openDocument(doc),
+                    onPressed:
+                        id == null || _busyId == id || status == 'revoked'
+                            ? null
+                            : () => _openDocument(doc),
                     icon: _busyId == id
                         ? const SizedBox(
                             width: 15,
@@ -459,7 +460,7 @@ class _OfficialIssuedDocumentsScreenState
                             CircleAvatar(
                               radius: 26,
                               backgroundColor: Colors.white24,
-                              child: Icon(Icons.envelope_outlined,
+                              child: Icon(Icons.mail_outline,
                                   color: Colors.white, size: 30),
                             ),
                             SizedBox(width: 14),

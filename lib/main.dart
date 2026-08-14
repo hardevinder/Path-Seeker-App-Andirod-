@@ -117,6 +117,8 @@ import 'screens/my_visitors_screen.dart';
 import 'screens/common/document_vault_screen.dart';
 import 'screens/common/official_issued_documents_screen.dart';
 import 'screens/common/anecdotal_records_screen.dart';
+import 'screens/common/daily_readiness_screen.dart';
+import 'screens/common/lost_found_screen.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -336,6 +338,8 @@ class StudentApp extends StatelessWidget {
           '/official-documents': (context) =>
               const OfficialIssuedDocumentsScreen(),
           '/anecdotal-records': (context) => const AnecdotalRecordsScreen(),
+          '/daily-readiness': (context) => const DailyReadinessScreen(),
+          '/lost-found': (context) => const LostFoundScreen(),
           '/student-health': (context) => const StudentHealthGrowthScreen(),
 
           // Superadmin sub-pages
