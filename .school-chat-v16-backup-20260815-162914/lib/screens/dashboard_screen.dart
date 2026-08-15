@@ -1705,9 +1705,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= 600;
         final crossAxisCount = isWide ? 4 : 2;
-        // Give two-column cards enough vertical room for the icon and all
-        // three text rows on compact devices and with scaled system fonts.
-        final aspect = isWide ? 1.35 : 1.20;
+        final aspect = isWide ? 1.35 : 1.28;
 
         return GridView.builder(
           shrinkWrap: true,
@@ -2138,15 +2136,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         'badge': messageUnread > 0 ? '$messageUnread' : 'Open',
         'highlight': true,
         'color': messageUnread > 0 ? kRed : kBlue,
-      },
-      // SCHOOL_CHAT_V16_STUDENT_ACTION
-      {
-        'label': 'School Chat',
-        'icon': Icons.chat_bubble_rounded,
-        'route': '/school-chat',
-        'badge': 'Live',
-        'highlight': true,
-        'color': const Color(0xFF4F46E5),
       },
       {
         'label': 'Circulars',

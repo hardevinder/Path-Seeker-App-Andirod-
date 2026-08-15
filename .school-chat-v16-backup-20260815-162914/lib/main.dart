@@ -40,7 +40,6 @@ import 'screens/student_circulars_screen.dart';
 import 'screens/leave_page.dart';
 import 'screens/student_diary_screen.dart';
 import 'screens/student_messages_screen.dart';
-import 'screens/school_chat_screen.dart'; // SCHOOL_CHAT_V16_IMPORT
 import 'screens/student_lesson_plans_screen.dart';
 import 'screens/online_classes_screen.dart';
 import 'screens/assessments_screen.dart';
@@ -114,7 +113,6 @@ import 'screens/teacher/teacher_my_leave_requests_screen.dart';
 
 import 'services/notification_service.dart';
 import 'services/api_service.dart';
-import 'widgets/school_chat_floating_button.dart'; // SCHOOL_CHAT_FLOATING_V16_2_IMPORT
 import 'screens/admin/role_feature_screens.dart';
 import 'screens/frontoffice/frontoffice_dashboard.dart';
 import 'screens/frontoffice/visitor_checkin_screen.dart';
@@ -129,35 +127,6 @@ import 'screens/common/teacher_performance_screen.dart';
 import 'screens/common/action_inbox_screen.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
-
-// SCHOOL_CHAT_FLOATING_V16_2_ROUTE_OBSERVER
-final ValueNotifier<String?> currentRouteName = ValueNotifier<String?>(null);
-
-class SchoolChatNavigatorObserver extends NavigatorObserver {
-  void _set(Route<dynamic>? route) {
-    currentRouteName.value = route?.settings.name;
-  }
-
-  @override
-  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    super.didPush(route, previousRoute);
-    _set(route);
-  }
-
-  @override
-  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    super.didPop(route, previousRoute);
-    _set(previousRoute);
-  }
-
-  @override
-  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
-    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
-    _set(newRoute);
-  }
-}
-
-final SchoolChatNavigatorObserver schoolChatNavigatorObserver = SchoolChatNavigatorObserver();
 
 /// ✅ REQUIRED: background handler (fixes "no onBackgroundMessage handler")
 /// Must be a top-level function.
@@ -309,7 +278,6 @@ class StudentApp extends StatelessWidget {
       child: MaterialApp(
         title: Constants.appName,
         navigatorKey: navigatorKey,
-        navigatorObservers: [schoolChatNavigatorObserver], // SCHOOL_CHAT_FLOATING_V16_2_OBSERVER_MOUNT
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           primarySwatch: Colors.indigo,
@@ -321,11 +289,7 @@ class StudentApp extends StatelessWidget {
           ),
         ),
         initialRoute: initialRoute,
-        builder: (context, child) => SchoolChatFloatingOverlay( // SCHOOL_CHAT_FLOATING_V16_2_BUILDER
-          navigatorKey: navigatorKey,
-          currentRoute: currentRouteName,
-          child: child ?? const SizedBox.shrink(),
-        ),
+        builder: (context, child) => child ?? const SizedBox.shrink(),
         routes: {
           '/login': (context) => const LoginScreen(),
           '/choose-role': (context) => const RoleSelectionScreen(),
@@ -563,7 +527,6 @@ class StudentApp extends StatelessWidget {
           '/diaries': (context) => const StudentDiaryScreen(),
           '/student-diary': (context) => const StudentDiaryScreen(),
           '/messages': (context) => const StudentMessagesScreen(),
-          '/school-chat': (context) => const SchoolChatScreen(), // SCHOOL_CHAT_V16_ROUTE
           '/student/library': (context) => const LibraryScreen.student(),
           '/library': (context) => const LibraryScreen.student(),
 

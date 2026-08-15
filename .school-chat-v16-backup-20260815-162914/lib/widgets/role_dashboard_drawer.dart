@@ -221,12 +221,6 @@ class RoleDashboardDrawer extends StatelessWidget {
             'title': 'Messages',
             'route': '/hr/messages',
           },
-          // SCHOOL_CHAT_V16_HR_TILE
-          {
-            'icon': Icons.forum_rounded,
-            'title': 'Secure School Chat',
-            'route': '/school-chat',
-          },
           {
             'icon': Icons.apartment_rounded,
             'title': 'Departments',

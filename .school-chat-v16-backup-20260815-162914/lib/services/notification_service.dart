@@ -14,7 +14,6 @@ import '../main.dart'; // navigatorKey
 import '../screens/student/student_bus_live_screen.dart';
 import '../screens/student/student_exam_seat_screen.dart';
 import '../screens/teacher/invigilation_duties_screen.dart';
-import '../screens/school_chat_screen.dart'; // SCHOOL_CHAT_V16_NOTIFICATION_IMPORT
 
 class NotificationService {
   static bool _firebaseEnsured = false;
@@ -209,16 +208,6 @@ class NotificationService {
       navigatorKey.currentState?.pushNamed('/official-documents');
       return;
     }
-    // SCHOOL_CHAT_V16_NOTIFICATION_ROUTE
-    if (normalizedScreen == 'schoolchatscreen' || type == 'school_chat') {
-      final rawThreadId = data['threadId'] ?? data['thread_id'];
-      final threadId = rawThreadId is int ? rawThreadId : int.tryParse('${rawThreadId ?? ''}');
-      navigatorKey.currentState?.push(
-        MaterialPageRoute(builder: (_) => SchoolChatScreen(openThreadId: threadId)),
-      );
-      return;
-    }
-
     if (normalizedScreen == 'studentbuslive' ||
         normalizedScreen == 'bustracking' ||
         normalizedScreen == 'studentbustracking' ||

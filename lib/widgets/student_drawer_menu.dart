@@ -201,6 +201,30 @@ class StudentDrawerMenu extends StatelessWidget {
                 ),
                 _tile(
                   context: context,
+                  routeName: '/student/leadership',
+                  icon: Icons.workspace_premium_rounded,
+                  title: 'My Leadership',
+                  color: const Color(0xFF4F46E5),
+                  subtitle: 'Council position, duties & leadership history',
+                ),
+                _tile(
+                  context: context,
+                  routeName: '/house-duty',
+                  icon: Icons.flag_outlined,
+                  title: 'My House Duties & Assembly',
+                  color: const Color(0xFFB45309),
+                  subtitle: 'My assigned House duties and performance',
+                ), // HOUSE_DUTY_V15 // STUDENT_LEADERSHIP_V13
+                _tile(
+                  context: context,
+                  routeName: '/parent-consents',
+                  icon: Icons.draw_rounded,
+                  title: 'Parent Consent',
+                  color: const Color(0xFF4F46E5),
+                  subtitle: 'Consent, acknowledgement & signed form scan',
+                ),
+                _tile(
+                  context: context,
                   routeName: '/document-vault',
                   icon: Icons.shield_outlined,
                   title: 'My Documents',

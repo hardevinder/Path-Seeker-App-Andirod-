@@ -623,6 +623,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
       ),
       drawer: TeacherDrawerMenu(activeRole: _activeRole),
       endDrawer: _buildNotificationsDrawer(),
+      floatingActionButton: _buildChatFab(),
       body: RefreshIndicator(
         onRefresh: _fetchAllData,
         color: const Color(0xFF6C63FF),
@@ -825,6 +826,43 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
         icon: const Icon(Icons.delete_outline),
         onPressed: () =>
             _removeNotification(notification['id']?.toString() ?? ''),
+      ),
+    );
+  }
+
+  // Floating Action Button
+
+  /// Builds the messages FAB with unread badge.
+  Widget _buildChatFab() {
+    return FloatingActionButton(
+      backgroundColor: const Color(0xFF2563EB),
+      onPressed: () => _navigateTo('/teacher/messages'),
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          const Icon(Icons.forum_rounded, color: Colors.white),
+          if (_messageUnread > 0) _buildUnreadBadge(_messageUnread),
+        ],
+      ),
+    );
+  }
+
+  /// Builds an unread count badge.
+  Widget _buildUnreadBadge(int count) {
+    return Positioned(
+      right: 0,
+      top: 0,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.red,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          count > 99 ? '99+' : count.toString(),
+          style: const TextStyle(color: Colors.white, fontSize: 10),
+        ),
       ),
     );
   }

@@ -401,15 +401,6 @@ class TeacherDrawerMenu extends StatelessWidget {
                   title: 'Messages',
                   color: const Color(0xFF9C27B0),
                 ),
-                // SCHOOL_CHAT_V16_TEACHER_TILE
-                _tile(
-                  context: context,
-                  routeName: '/school-chat',
-                  icon: Icons.chat_bubble_rounded,
-                  title: 'Secure School Chat',
-                  color: const Color(0xFF4F46E5),
-                  subtitle: 'Realtime • attachments • seen',
-                ),
                 _tile(
                   context: context,
                   routeName: '/teacher/marks-entry',

@@ -189,15 +189,6 @@ class SuperadminDashboardScreen extends StatelessWidget {
               color: Color(0xFF2563EB),
               routeName: '/accounts/messages',
             ),
-            // SCHOOL_CHAT_V16_SUPERADMIN_ACTION
-            AdminAction(
-              title: 'Secure School Chat',
-              subtitle: 'Realtime staff communication',
-              badge: 'LIVE',
-              icon: Icons.forum_rounded,
-              color: Color(0xFF4F46E5),
-              routeName: '/school-chat',
-            ),
             AdminAction(
               title: 'Role Permissions',
               subtitle: 'Assign role access',

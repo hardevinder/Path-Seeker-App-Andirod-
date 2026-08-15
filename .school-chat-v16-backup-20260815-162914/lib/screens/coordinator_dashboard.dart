@@ -591,18 +591,6 @@ class _CoordinatorDashboardState extends State<CoordinatorDashboard> {
                     '/teacher/messages',
                   ),
                 ),
-                // SCHOOL_CHAT_V16_COORD_CARD
-                _quickCard(
-                  icon: Icons.chat_bubble_rounded,
-                  eyebrow: 'Communication',
-                  title: 'Secure School Chat',
-                  body: 'Realtime teacher communication with attachments, typing and seen status.',
-                  chips: const ['Realtime', 'Seen', 'Files'],
-                  colors: const [Color(0xFFEFF6FF), Color(0xFFEEF2FF)],
-                  iconColor: const Color(0xFF4F46E5),
-                  actionLabel: 'Open',
-                  onTap: () => _openRouteOrNotice('Secure School Chat', '/school-chat'),
-                ),
                 _quickCard(
                   icon: Icons.campaign_rounded,
                   eyebrow: 'Communication',
