@@ -212,9 +212,12 @@ class NotificationService {
     // SCHOOL_CHAT_V16_NOTIFICATION_ROUTE
     if (normalizedScreen == 'schoolchatscreen' || type == 'school_chat') {
       final rawThreadId = data['threadId'] ?? data['thread_id'];
-      final threadId = rawThreadId is int ? rawThreadId : int.tryParse('${rawThreadId ?? ''}');
+      final threadId = rawThreadId is int
+          ? rawThreadId
+          : int.tryParse('${rawThreadId ?? ''}');
       navigatorKey.currentState?.push(
-        MaterialPageRoute(builder: (_) => SchoolChatScreen(openThreadId: threadId)),
+        MaterialPageRoute(
+            builder: (_) => SchoolChatScreen(openThreadId: threadId)),
       );
       return;
     }
@@ -236,6 +239,12 @@ class NotificationService {
       navigatorKey.currentState?.push(
         MaterialPageRoute(builder: (_) => const StudentExamSeatScreen()),
       );
+      return;
+    }
+
+    if (normalizedScreen == 'studentdatesheetscreen' ||
+        type == 'exam_datesheet_published') {
+      navigatorKey.currentState?.pushNamed('/student/date-sheet');
       return;
     }
 

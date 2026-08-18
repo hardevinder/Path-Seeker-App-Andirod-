@@ -590,14 +590,6 @@ class _TeacherDrawerMenuState extends State<TeacherDrawerMenu> {
                   title: 'My Attendance',
                   color: const Color(0xFF4A90E2),
                 ),
-                _tile(
-                  context: context,
-                  routeName: '/change-password',
-                  icon: Icons.key_rounded,
-                  title: 'Change Password',
-                  color: const Color(0xFF7C3AED),
-                  subtitle: 'Update your login password',
-                ), // CHANGE_PASSWORD_TEACHER_DRAWER_V1
                 const SizedBox(height: 8),
               ],
             ),

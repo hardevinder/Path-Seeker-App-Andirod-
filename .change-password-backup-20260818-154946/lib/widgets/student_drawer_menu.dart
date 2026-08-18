@@ -403,14 +403,6 @@ class _StudentDrawerMenuState extends State<StudentDrawerMenu> {
                 ),
                 _tile(
                   context: context,
-                  routeName: '/change-password',
-                  icon: Icons.key_rounded,
-                  title: 'Change Password',
-                  color: const Color(0xFF7C3AED),
-                  subtitle: 'Update your login password',
-                ), // CHANGE_PASSWORD_STUDENT_DRAWER_V1
-                _tile(
-                  context: context,
                   routeName: '/settings',
                   icon: Icons.settings_rounded,
                   title: 'Settings',

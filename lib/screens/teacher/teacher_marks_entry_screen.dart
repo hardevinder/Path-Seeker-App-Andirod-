@@ -20,10 +20,7 @@ class _TeacherMarksEntryScreenState extends State<TeacherMarksEntryScreen> {
   bool _saving = false;
 
   List<Map<String, dynamic>> _sessions = [];
-  List<Map<String, dynamic>> _classExamSubjects = [];
-  List<Map<String, dynamic>> _sections = [];
-  List<Map<String, dynamic>> _exams = [];
-  List<Map<String, dynamic>> _subjects = [];
+  List<Map<String, dynamic>> _accessibleSchedules = [];
   List<Map<String, dynamic>> _students = [];
   List<Map<String, dynamic>> _components = [];
   List<dynamic> _gradeOptions = [];
@@ -59,8 +56,7 @@ class _TeacherMarksEntryScreenState extends State<TeacherMarksEntryScreen> {
     setState(() => _initialLoading = true);
     await Future.wait([
       _loadSessions(),
-      _loadClassExamSubjects(),
-      _loadSections(),
+      _loadMarksScope(),
     ]);
     if (mounted) setState(() => _initialLoading = false);
   }
@@ -87,22 +83,15 @@ class _TeacherMarksEntryScreenState extends State<TeacherMarksEntryScreen> {
     } catch (_) {}
   }
 
-  Future<void> _loadClassExamSubjects() async {
+  Future<void> _loadMarksScope() async {
     try {
-      final response = await ApiService.rawGet('/exams/class-exam-subjects');
+      final response = await ApiService.rawGet('/marks-access/my-scope');
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        final rows = _asMapList(jsonDecode(response.body));
-        if (mounted) setState(() => _classExamSubjects = rows);
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _loadSections() async {
-    try {
-      final response = await ApiService.rawGet('/sections');
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        final rows = _asMapList(jsonDecode(response.body));
-        if (mounted) setState(() => _sections = rows);
+        final decoded = jsonDecode(response.body);
+        final rows = decoded is Map
+            ? _asMapList(decoded['schedules'])
+            : <Map<String, dynamic>>[];
+        if (mounted) setState(() => _accessibleSchedules = rows);
       }
     } catch (_) {}
   }
@@ -142,42 +131,69 @@ class _TeacherMarksEntryScreenState extends State<TeacherMarksEntryScreen> {
     return _idOf(row) ?? '-';
   }
 
-  List<Map<String, dynamic>> get _classes => _classExamSubjects;
+  List<Map<String, dynamic>> get _sessionSchedules => _accessibleSchedules
+      .where(
+          (row) => _sessionId == null || '${row['session_id']}' == _sessionId)
+      .toList();
+
+  List<Map<String, dynamic>> _uniqueBy(
+    Iterable<Map<String, dynamic>> rows,
+    String key,
+  ) {
+    final unique = <String, Map<String, dynamic>>{};
+    for (final row in rows) {
+      final value = row[key];
+      if (value != null && '$value'.isNotEmpty) unique['$value'] = row;
+    }
+    return unique.values.toList();
+  }
+
+  List<Map<String, dynamic>> get _classes =>
+      _uniqueBy(_sessionSchedules, 'class_id');
 
   List<Map<String, dynamic>> get _filteredSections {
-    if (_classId == null || _classId!.isEmpty) return _sections;
-    final exact = _sections.where((section) {
-      final value = section['class_id'] ?? section['classId'];
-      return value == null || '$value' == _classId;
-    }).toList();
-    return exact.isEmpty ? _sections : exact;
+    if (_classId == null || _classId!.isEmpty) return [];
+    return _uniqueBy(
+      _sessionSchedules.where((row) => '${row['class_id']}' == _classId),
+      'section_id',
+    );
+  }
+
+  List<Map<String, dynamic>> get _filteredExams {
+    if (_classId == null || _sectionId == null) return [];
+    return _uniqueBy(
+      _sessionSchedules.where((row) =>
+          '${row['class_id']}' == _classId &&
+          '${row['section_id']}' == _sectionId),
+      'exam_id',
+    );
+  }
+
+  List<Map<String, dynamic>> get _filteredSubjects {
+    if (_classId == null || _sectionId == null || _examId == null) return [];
+    return _uniqueBy(
+      _sessionSchedules.where((row) =>
+          '${row['class_id']}' == _classId &&
+          '${row['section_id']}' == _sectionId &&
+          '${row['exam_id']}' == _examId),
+      'subject_id',
+    );
   }
 
   void _selectClass(String? classId) {
-    final selectedClass = _classes.firstWhere(
-      (row) => '${row['class_id'] ?? row['id']}' == '$classId',
-      orElse: () => <String, dynamic>{},
-    );
     setState(() {
       _classId = classId;
       _sectionId = null;
       _examId = null;
       _subjectId = null;
-      _exams = _asMapList(selectedClass['exams']);
-      _subjects = [];
       _clearMarks();
     });
   }
 
   void _selectExam(String? examId) {
-    final selectedExam = _exams.firstWhere(
-      (row) => '${row['exam_id'] ?? row['id']}' == '$examId',
-      orElse: () => <String, dynamic>{},
-    );
     setState(() {
       _examId = examId;
       _subjectId = null;
-      _subjects = _asMapList(selectedExam['subjects']);
       _clearMarks();
     });
   }
@@ -412,6 +428,10 @@ class _TeacherMarksEntryScreenState extends State<TeacherMarksEntryScreen> {
                   _labelOf(row, const ['session_name', 'name', 'title']),
               onChanged: (value) => setState(() {
                 _sessionId = value;
+                _classId = null;
+                _sectionId = null;
+                _examId = null;
+                _subjectId = null;
                 _clearMarks();
               }),
             ),
@@ -433,13 +453,15 @@ class _TeacherMarksEntryScreenState extends State<TeacherMarksEntryScreen> {
                   _labelOf(row, const ['section_name', 'name', 'section']),
               onChanged: (value) => setState(() {
                 _sectionId = value;
+                _examId = null;
+                _subjectId = null;
                 _clearMarks();
               }),
             ),
             _dropdown(
               label: 'Exam',
               value: _examId,
-              items: _exams,
+              items: _filteredExams,
               itemId: (row) => '${row['exam_id'] ?? row['id']}',
               itemLabel: (row) =>
                   _labelOf(row, const ['exam_name', 'name', 'title']),
@@ -448,7 +470,7 @@ class _TeacherMarksEntryScreenState extends State<TeacherMarksEntryScreen> {
             _dropdown(
               label: 'Subject',
               value: _subjectId,
-              items: _subjects,
+              items: _filteredSubjects,
               itemId: (row) => '${row['subject_id'] ?? row['id']}',
               itemLabel: (row) =>
                   _labelOf(row, const ['subject_name', 'name', 'title']),

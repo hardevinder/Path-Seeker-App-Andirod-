@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fl_chart/fl_chart.dart';
 import '../../services/teacher_performance_api.dart';
 
 class TeacherPerformanceScreen extends StatefulWidget {
@@ -78,6 +79,392 @@ class _TeacherPerformanceScreenState extends State<TeacherPerformanceScreen> {
     return Colors.red.shade700;
   }
 
+
+  String _metricLabel(String key) {
+    return key
+        .split('_')
+        .where((part) => part.isNotEmpty)
+        .map((part) => '${part[0].toUpperCase()}${part.substring(1)}')
+        .join(' ');
+  }
+
+  String _metricValue(dynamic value) {
+    if (value == null || value.toString().isEmpty) return '—';
+    if (value is bool) return value ? 'Yes' : 'No';
+    if (value is num) {
+      if (value == value.roundToDouble()) return value.toInt().toString();
+      return value.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '');
+    }
+    return value.toString();
+  }
+
+  String _componentCalculation(Map<String, dynamic> c) {
+    final details = c['details'] is Map
+        ? Map<String, dynamic>.from(c['details'] as Map)
+        : <String, dynamic>{};
+    final detailCalculation = details['calculation']?.toString() ?? '';
+    if (detailCalculation.isNotEmpty) return detailCalculation;
+
+    final score = double.tryParse('${c['score']}');
+    final metrics = c['metrics'] is Map
+        ? Map<String, dynamic>.from(c['metrics'] as Map)
+        : <String, dynamic>{};
+    if (score == null) {
+      final reasons = c['reasons'] is List
+          ? List<dynamic>.from(c['reasons'])
+          : <dynamic>[];
+      return reasons.isNotEmpty
+          ? reasons.first.toString()
+          : 'This component is not applicable for the selected period.';
+    }
+
+    final code = c['code']?.toString() ?? '';
+    switch (code) {
+      case 'ATTENDANCE':
+        return 'Attendance score is the average attendance credit across ${_metricValue(metrics['scorable_days'] ?? 0)} scorable day(s). Approved leave/excluded days are removed from the denominator. Final score: ${score.toStringAsFixed(1)}%.';
+      case 'DIARY':
+        return '${_metricValue(metrics['matched_diary_entries'] ?? 0)} matched diary teaching-day(s) ÷ ${_metricValue(metrics['expected_class_subject_days'] ?? 0)} expected teaching-day(s) × 100 = ${score.toStringAsFixed(1)}%.';
+      case 'LESSON_PLAN':
+        return '${_metricValue(metrics['credited_plans'] ?? 0)} credited plan(s) ÷ ${_metricValue(metrics['expected_weekly_class_subject_plans'] ?? 0)} expected weekly class-subject plan(s) × 100 = ${score.toStringAsFixed(1)}%.';
+      case 'SYLLABUS':
+        return '${_metricValue(metrics['completed_due_items'] ?? 0)} completed due syllabus item(s) ÷ ${_metricValue(metrics['due_items'] ?? 0)} due item(s) × 100 = ${score.toStringAsFixed(1)}%.';
+      case 'ASSESSMENT':
+        return '${_metricValue(metrics['evaluated_or_published'] ?? 0)} completed assessment credit(s) ÷ ${_metricValue(metrics['effective_expected'] ?? metrics['assessments_due'] ?? 0)} expected credit(s) × 100 = ${score.toStringAsFixed(1)}%.';
+      case 'STUDENT_PROGRESS':
+        return 'Teaching Result ${score.toStringAsFixed(1)}/100 is based on comparable same-class, section and subject student growth. Within each comparable group: learning growth 45%, proficiency/pass improvement 20%, weak-student recovery 20% when applicable, consistency 10%, and evidence coverage 5%.';
+      case 'SUBSTITUTION':
+        return '${_metricValue(metrics['inferred_completed'] ?? 0)} inferred completion credit(s) ÷ ${_metricValue(metrics['scorable'] ?? 0)} scorable substitution(s) × 100 = ${score.toStringAsFixed(1)}%.';
+      case 'DUTY':
+      case 'ACHIEVEMENT':
+        return 'Score is the average of ${_metricValue(metrics['rated_entries'] ?? 0)} approved rated entries = ${score.toStringAsFixed(1)}%.';
+      default:
+        return 'Rule-based score for this component = ${score.toStringAsFixed(1)}%.';
+    }
+  }
+
+  Map<String, dynamic>? _componentByCode(String code) {
+    final components = _data['components'] is List
+        ? List<dynamic>.from(_data['components'])
+        : <dynamic>[];
+    for (final raw in components) {
+      if (raw is Map && raw['code']?.toString() == code) {
+        return Map<String, dynamic>.from(raw);
+      }
+    }
+    return null;
+  }
+
+  Widget _detailSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 18, bottom: 8),
+      child: Text(title,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+    );
+  }
+
+  Widget _detailMetricTile(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+        const SizedBox(height: 4),
+        Text(value,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+      ]),
+    );
+  }
+
+  Future<void> _showComponentDetails(Map<String, dynamic> c) async {
+    final score = double.tryParse('${c['score']}');
+    final metrics = c['metrics'] is Map
+        ? Map<String, dynamic>.from(c['metrics'] as Map)
+        : <String, dynamic>{};
+    final reasons = c['reasons'] is List
+        ? List<dynamic>.from(c['reasons'])
+        : <dynamic>[];
+    final details = c['details'] is Map
+        ? Map<String, dynamic>.from(c['details'] as Map)
+        : <String, dynamic>{};
+    final assessments = details['assessments'] is List
+        ? List<dynamic>.from(details['assessments'])
+        : <dynamic>[];
+    final weight = double.tryParse('${c['weight'] ?? 0}') ?? 0;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => DraggableScrollableSheet(
+        initialChildSize: 0.82,
+        minChildSize: 0.48,
+        maxChildSize: 0.96,
+        expand: false,
+        builder: (context, scrollController) => Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(children: [
+            const SizedBox(height: 10),
+            Container(
+              width: 42,
+              height: 4,
+              decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(4)),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+              child: Row(children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(c['label']?.toString() ??
+                          c['code']?.toString() ??
+                          'Component details',
+                          style: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 2),
+                      Text(
+                        'How this score was calculated • Weight ${weight.toStringAsFixed(0)}%',
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.grey.shade600),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Close',
+                  onPressed: () => Navigator.of(sheetContext).pop(),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ]),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+                children: [
+                  Row(children: [
+                    Expanded(
+                      flex: 2,
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text('COMPONENT SCORE',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.grey.shade600,
+                                    fontWeight: FontWeight.w700)),
+                            const SizedBox(height: 5),
+                            Text(score == null ? 'N/A' : score.toStringAsFixed(1),
+                                style: TextStyle(
+                                    fontSize: 34,
+                                    fontWeight: FontWeight.w900,
+                                    color: score == null
+                                        ? Colors.grey
+                                        : _scoreColor(score))),
+                            Text(score == null
+                                ? 'Not applicable in this period'
+                                : 'out of 100',
+                                style: TextStyle(
+                                    fontSize: 11, color: Colors.grey.shade600)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ]),
+                  _detailSectionTitle('Calculation'),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(_componentCalculation(c),
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w700, height: 1.4)),
+                          if ((details['target_note']?.toString() ?? '')
+                              .isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text(details['target_note'].toString(),
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade700,
+                                    height: 1.35)),
+                          ],
+                          const SizedBox(height: 8),
+                          Text(
+                            'If a component is N/A, it is excluded from the applicable-weight denominator instead of being treated as zero.',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade600,
+                                height: 1.35),
+                          ),
+                        ]),
+                  ),
+                  if (metrics.isNotEmpty) ...[
+                    _detailSectionTitle('Key figures'),
+                    GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: metrics.length,
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 8,
+                        mainAxisSpacing: 8,
+                        childAspectRatio: 2.15,
+                      ),
+                      itemBuilder: (_, i) {
+                        final entry = metrics.entries.elementAt(i);
+                        return _detailMetricTile(
+                            _metricLabel(entry.key), _metricValue(entry.value));
+                      },
+                    ),
+                  ],
+                  if (reasons.isNotEmpty) ...[
+                    _detailSectionTitle('Why the system gave this score'),
+                    ...reasons.where((r) => r.toString().trim().isNotEmpty).map(
+                          (r) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 6),
+                                  child: Icon(Icons.circle,
+                                      size: 6, color: Colors.grey.shade600),
+                                ),
+                                const SizedBox(width: 9),
+                                Expanded(
+                                    child: Text(r.toString(),
+                                        style: const TextStyle(height: 1.35))),
+                              ],
+                            ),
+                          ),
+                        ),
+                  ],
+                  if ((c['code']?.toString() ?? '') == 'ASSESSMENT') ...[
+                    _detailSectionTitle('Assessment-wise completion evidence'),
+                    Text(
+                      'Exact evidence behind Assessments & Results • ${assessments.length} assessment record(s)',
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                    ),
+                    const SizedBox(height: 10),
+                    if (assessments.isEmpty)
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Text(
+                            'No assessment records found for this period.'),
+                      )
+                    else
+                      ...assessments.map((raw) {
+                        final row = raw is Map
+                            ? Map<String, dynamic>.from(raw)
+                            : <String, dynamic>{};
+                        final status = row['status']?.toString() ?? '-';
+                        final complete = status == 'EVALUATED' ||
+                            status == 'RESULT_PUBLISHED';
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey.shade200),
+                          ),
+                          child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(children: [
+                                  Expanded(
+                                    child: Text(
+                                      row['assessment']?.toString() ??
+                                          'Assessment',
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w800),
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: complete
+                                          ? Colors.green.shade50
+                                          : status == 'DRAFT'
+                                              ? Colors.grey.shade200
+                                              : Colors.orange.shade50,
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Text(
+                                      status.replaceAll('_', ' '),
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                        color: complete
+                                            ? Colors.green.shade800
+                                            : status == 'DRAFT'
+                                                ? Colors.grey.shade700
+                                                : Colors.orange.shade800,
+                                      ),
+                                    ),
+                                  ),
+                                ]),
+                                const SizedBox(height: 8),
+                                Text(
+                                  '${row['date'] ?? '-'} • ${row['type'] ?? '-'} • ${row['mode'] ?? '-'}',
+                                  style: TextStyle(
+                                      fontSize: 12, color: Colors.grey.shade700),
+                                ),
+                                const SizedBox(height: 5),
+                                Text(
+                                  'Due: ${row['due'] ?? '-'}     Credit: ${row['credit'] ?? '-'}',
+                                  style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600),
+                                ),
+                              ]),
+                        );
+                      }),
+                  ],
+                ],
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -109,6 +496,8 @@ class _TeacherPerformanceScreenState extends State<TeacherPerformanceScreen> {
                           style: TextStyle(color: Colors.red.shade800)),
                     ),
                   _scoreCard(),
+                  const SizedBox(height: 16),
+                  _teachingResultCard(),
                   const SizedBox(height: 16),
                   Text('Component Breakdown',
                       style: Theme.of(context)
@@ -192,31 +581,228 @@ class _TeacherPerformanceScreenState extends State<TeacherPerformanceScreen> {
       elevation: 0,
       color: Colors.grey.shade50,
       margin: const EdgeInsets.only(bottom: 8),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _showComponentDetails(c),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Expanded(
+                  child: Text(
+                      c['label']?.toString() ?? c['code']?.toString() ?? '',
+                      style: const TextStyle(fontWeight: FontWeight.w700))),
+              Text(applicable ? score.toStringAsFixed(1) : 'N/A',
+                  style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: applicable ? _scoreColor(score) : Colors.grey)),
+            ]),
+            Text('Weight ${c['weight'] ?? 0}%',
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+            const SizedBox(height: 8),
+            LinearProgressIndicator(
+                value: applicable ? (score / 100).clamp(0, 1) : 0,
+                minHeight: 6,
+                borderRadius: BorderRadius.circular(5)),
+            if (reasons.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(reasons.first.toString(),
+                  style: TextStyle(color: Colors.grey.shade700, fontSize: 12))
+            ],
+            const SizedBox(height: 10),
+            Row(children: [
+              Text('View details / How calculated',
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700)),
+              const SizedBox(width: 2),
+              Icon(Icons.chevron_right_rounded,
+                  size: 18, color: Theme.of(context).colorScheme.primary),
+            ]),
+          ]),
+        ),
+      ),
+    );
+  }
+
+
+  Widget _metricBox(String label, String value, {String? note}) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+          if ((note ?? '').isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(note!, style: TextStyle(fontSize: 10, color: Colors.grey.shade600), maxLines: 2, overflow: TextOverflow.ellipsis),
+          ],
+        ]),
+      ),
+    );
+  }
+
+  Widget _teachingResultCard() {
+    final raw = _data['teaching_result'];
+    final analytics = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+    final applicable = analytics['applicable'] == true;
+    final summary = analytics['summary'] is Map ? Map<String, dynamic>.from(analytics['summary'] as Map) : <String, dynamic>{};
+    final groups = analytics['groups'] is List ? List<dynamic>.from(analytics['groups']) : <dynamic>[];
+    if (!applicable || groups.isEmpty) {
+      final progressComponent = _componentByCode('STUDENT_PROGRESS');
+      return Card(
+        elevation: 0,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: progressComponent == null
+              ? null
+              : () => _showComponentDetails(progressComponent),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Icon(Icons.insights_rounded, color: Colors.blue.shade700),
+                const SizedBox(width: 12),
+                const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Teaching Result & Student Growth', style: TextStyle(fontWeight: FontWeight.w800)),
+                  SizedBox(height: 4),
+                  Text('Graphs will appear after at least two comparable results exist for the same class, section and subject.'),
+                ])),
+              ]),
+              if (progressComponent != null) ...[
+                const SizedBox(height: 10),
+                Row(children: [
+                  Text('View details / Why N/A',
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700)),
+                  const SizedBox(width: 2),
+                  Icon(Icons.chevron_right_rounded,
+                      size: 18,
+                      color: Theme.of(context).colorScheme.primary),
+                ]),
+              ],
+            ]),
+          ),
+        ),
+      );
+    }
+
+    final group = Map<String, dynamic>.from(groups.first as Map);
+    final timeline = group['timeline'] is List ? List<dynamic>.from(group['timeline']) : <dynamic>[];
+    final spots = <FlSpot>[];
+    for (var i = 0; i < timeline.length; i++) {
+      final row = Map<String, dynamic>.from(timeline[i] as Map);
+      final avg = double.tryParse('${row['average'] ?? 0}') ?? 0;
+      spots.add(FlSpot(i.toDouble(), avg.clamp(0, 100).toDouble()));
+    }
+    final score = double.tryParse('${analytics['teaching_score'] ?? 0}') ?? 0;
+    final growth = double.tryParse('${summary['growth_points'] ?? 0}') ?? 0;
+    final pass = double.tryParse('${summary['latest_pass_percent'] ?? 0}') ?? 0;
+    final passBenchmark = double.tryParse('${analytics['pass_benchmark'] ?? 40}') ?? 40;
+    final improved = int.tryParse('${summary['improved_students'] ?? 0}') ?? 0;
+    final recovered = int.tryParse('${summary['recovered_students'] ?? 0}') ?? 0;
+    final improvedCount = int.tryParse('${group['improved_students'] ?? 0}') ?? 0;
+    final stableCount = int.tryParse('${group['stable_students'] ?? 0}') ?? 0;
+    final declinedCount = int.tryParse('${group['declined_students'] ?? 0}') ?? 0;
+    final totalMix = [improvedCount, stableCount, declinedCount].fold<int>(0, (a, b) => a + b);
+
+    return Card(
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            Expanded(
-                child: Text(
-                    c['label']?.toString() ?? c['code']?.toString() ?? '',
-                    style: const TextStyle(fontWeight: FontWeight.w700))),
-            Text(applicable ? score.toStringAsFixed(1) : 'N/A',
-                style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    color: applicable ? _scoreColor(score) : Colors.grey)),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Teaching Result & Student Growth', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 3),
+              Text('Formal exams + Smart Assessments', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+            ])),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(color: _scoreColor(score).withOpacity(0.10), borderRadius: BorderRadius.circular(20)),
+              child: Text('${score.toStringAsFixed(1)}/100', style: TextStyle(fontWeight: FontWeight.w800, color: _scoreColor(score))),
+            ),
           ]),
-          Text('Weight ${c['weight'] ?? 0}%',
-              style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+          const SizedBox(height: 14),
+          Row(children: [
+            _metricBox('Growth', '${growth >= 0 ? '+' : ''}${growth.toStringAsFixed(1)} pts', note: 'same-student'),
+            const SizedBox(width: 8),
+            _metricBox('Pass Rate', '${pass.toStringAsFixed(1)}%', note: 'latest'),
+          ]),
           const SizedBox(height: 8),
-          LinearProgressIndicator(
-              value: applicable ? (score / 100).clamp(0, 1) : 0,
-              minHeight: 6,
-              borderRadius: BorderRadius.circular(5)),
-          if (reasons.isNotEmpty) ...[
+          Row(children: [
+            _metricBox('Improved', '$improved', note: 'student records'),
+            const SizedBox(width: 8),
+            _metricBox('Recovered', '$recovered', note: 'below ${passBenchmark.toStringAsFixed(0)}% → benchmark'),
+          ]),
+          const SizedBox(height: 18),
+          Text('${group['class_name'] ?? 'Class'}${(group['section_name'] ?? '').toString().isNotEmpty ? '-${group['section_name']}' : ''} • ${group['subject_name'] ?? 'Subject'}', style: const TextStyle(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          Text('Learning Growth Trend', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+          const SizedBox(height: 10),
+          if (spots.length >= 2)
+            SizedBox(
+              height: 190,
+              child: LineChart(LineChartData(
+                minY: 0,
+                maxY: 100,
+                gridData: FlGridData(show: true, horizontalInterval: 20),
+                borderData: FlBorderData(show: false),
+                titlesData: FlTitlesData(
+                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 34, interval: 20, getTitlesWidget: (v, meta) => Text('${v.toInt()}%', style: const TextStyle(fontSize: 9)))),
+                  bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 38, interval: 1, getTitlesWidget: (v, meta) {
+                    final i = v.toInt();
+                    if (i < 0 || i >= timeline.length) return const SizedBox.shrink();
+                    final row = Map<String, dynamic>.from(timeline[i] as Map);
+                    final label = (row['label'] ?? '').toString();
+                    return Padding(padding: const EdgeInsets.only(top: 6), child: Text(label.length > 8 ? '${label.substring(0, 8)}…' : label, style: const TextStyle(fontSize: 9)));
+                  })),
+                ),
+                lineTouchData: LineTouchData(touchTooltipData: LineTouchTooltipData(getTooltipItems: (items) => items.map((item) {
+                  final i = item.x.toInt();
+                  final row = i >= 0 && i < timeline.length ? Map<String, dynamic>.from(timeline[i] as Map) : <String, dynamic>{};
+                  return LineTooltipItem('${row['label'] ?? ''}\n${item.y.toStringAsFixed(1)}% • ${row['date'] ?? ''}', const TextStyle(color: Colors.white, fontWeight: FontWeight.w600));
+                }).toList())),
+                lineBarsData: [LineChartBarData(spots: spots, isCurved: true, barWidth: 3, dotData: const FlDotData(show: true))],
+              )),
+            ),
+          if (totalMix > 0) ...[
+            const SizedBox(height: 16),
+            const Text('Student Progress Mix', style: TextStyle(fontWeight: FontWeight.w700)),
             const SizedBox(height: 8),
-            Text(reasons.first.toString(),
-                style: TextStyle(color: Colors.grey.shade700, fontSize: 12))
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Row(children: [
+                if (improvedCount > 0) Expanded(flex: improvedCount, child: Container(height: 12, color: Colors.green.shade600)),
+                if (stableCount > 0) Expanded(flex: stableCount, child: Container(height: 12, color: Colors.blue.shade500)),
+                if (declinedCount > 0) Expanded(flex: declinedCount, child: Container(height: 12, color: Colors.orange.shade600)),
+              ]),
+            ),
+            const SizedBox(height: 6),
+            Text('Improved $improvedCount  •  Stable $stableCount  •  Needs support $declinedCount', style: TextStyle(fontSize: 11, color: Colors.grey.shade700)),
           ],
+          const SizedBox(height: 12),
+          TextButton.icon(
+            onPressed: () {
+              final component = _componentByCode('STUDENT_PROGRESS');
+              if (component != null) _showComponentDetails(component);
+            },
+            icon: const Icon(Icons.info_outline_rounded, size: 18),
+            label: const Text('How Teaching Result is calculated'),
+            style: TextButton.styleFrom(padding: EdgeInsets.zero),
+          ),
         ]),
       ),
     );

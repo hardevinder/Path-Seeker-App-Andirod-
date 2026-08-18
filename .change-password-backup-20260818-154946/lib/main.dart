@@ -17,7 +17,6 @@ import 'auth/role_manager.dart';
 import 'screens/login_screen.dart';
 import 'screens/role_selection_screen.dart';
 import 'screens/dashboard_screen.dart' as dashboard;
-import 'screens/common/change_password_screen.dart'; // CHANGE_PASSWORD_MOBILE_V1
 import 'screens/coordinator_dashboard.dart';
 import 'screens/coordinator_attendance_summary_screen.dart';
 import 'screens/coordinator_academic_calendar_screen.dart';
@@ -336,7 +335,6 @@ class StudentApp extends StatelessWidget {
           '/login': (context) => const LoginScreen(),
           '/choose-role': (context) => const RoleSelectionScreen(),
           '/dashboard': (context) => dashboard.DashboardScreen(),
-          '/change-password': (context) => const ChangePasswordScreen(), // CHANGE_PASSWORD_MOBILE_ROUTE_V1
 
           // Teacher
           '/teacher': (context) => const TeacherDashboard(),

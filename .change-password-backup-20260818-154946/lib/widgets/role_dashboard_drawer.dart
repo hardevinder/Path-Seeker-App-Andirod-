@@ -447,13 +447,6 @@ class RoleDashboardDrawer extends StatelessWidget {
                     color: const Color(0xFF4F46E5),
                     routeName: '/action-inbox',
                   ),
-                _tile(
-                  context: context,
-                  icon: Icons.key_rounded,
-                  title: 'Change Password',
-                  color: const Color(0xFF7C3AED),
-                  routeName: '/change-password',
-                ), // CHANGE_PASSWORD_ROLE_DRAWER_V1
                 const Divider(height: 0),
                 ..._dashboardItems().map((item) {
                   return _tile(

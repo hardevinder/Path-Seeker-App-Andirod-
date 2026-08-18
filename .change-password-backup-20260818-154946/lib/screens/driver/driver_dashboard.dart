@@ -82,11 +82,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         title: const Text('Driver Dashboard'),
         actions: [
           IconButton(
-            onPressed: () => Navigator.pushNamed(context, '/change-password'),
-            tooltip: 'Change Password',
-            icon: const Icon(Icons.key_rounded),
-          ), // CHANGE_PASSWORD_DRIVER_V1
-          IconButton(
               onPressed: _logout,
               tooltip: 'Logout',
               icon: const Icon(Icons.logout))
