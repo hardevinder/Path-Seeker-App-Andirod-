@@ -43,7 +43,6 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
   final List<String> statuses = ['present', 'absent', 'late', 'leave'];
   List<Student> students = [];
   Map<int, String> attendance = {};
-  Map<int, int> recordIds = {};
   List<dynamic> holidays = [];
 
   DateTime selectedDate = DateTime(
@@ -231,14 +230,11 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
 
         if (data is List && data.isNotEmpty) {
           final att = <int, String>{};
-          final rec = <int, int>{};
-
           for (var a in data) {
             final sid = a['studentId'] ?? a['student_id'] ?? a['student'];
             if (sid == null) continue;
 
             att[sid] = (a['status'] ?? 'present') as String;
-            if (a['id'] != null) rec[sid] = a['id'];
           }
 
           // Ensure every student has some status
@@ -250,7 +246,6 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
 
           setState(() {
             attendance = att;
-            recordIds = rec;
             mode = 'edit';
           });
         } else {
@@ -259,7 +254,6 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
           setState(() {
             mode = 'create';
             attendance = {for (var s in students) s.id: 'present'};
-            recordIds = {};
           });
         }
       } else if (resp.statusCode == 401) {
@@ -270,7 +264,6 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
         setState(() {
           mode = 'create';
           attendance = {for (var s in students) s.id: 'present'};
-          recordIds = {};
         });
       }
     } catch (_) {
@@ -279,7 +272,6 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
       setState(() {
         mode = 'create';
         attendance = {for (var s in students) s.id: 'present'};
-        recordIds = {};
       });
     }
   }
@@ -335,41 +327,34 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
         return;
       }
 
-      Future<http.Response> send(Student s, [int? id]) {
-        final body = json.encode({
-          'studentId': s.id,
-          'status': attendance[s.id] ?? 'present',
-          'remarks': '',
+      final response = await http.post(
+        Uri.parse('$baseUrl/attendance/bulk'),
+        headers: headers,
+        body: json.encode({
           'date': _formatDate(selectedDate),
-        });
+          'records': students
+              .map((s) => {
+                    'studentId': s.id,
+                    'status': attendance[s.id] ?? 'present',
+                  })
+              .toList(),
+        }),
+      );
 
-        if (id != null) {
-          return http.put(
-            Uri.parse('$baseUrl/attendance/$id'),
-            body: body,
-            headers: headers,
-          );
-        }
-
-        return http.post(
-          Uri.parse('$baseUrl/attendance'),
-          body: body,
-          headers: headers,
-        );
-      }
-
-      final futures = students.map((s) => send(s, recordIds[s.id])).toList();
-      final results = await Future.wait(futures);
-      final failed = results.where((r) => r.statusCode >= 400).toList();
-
-      if (failed.isNotEmpty) {
-        if (failed.any((r) => r.statusCode == 401)) {
+      if (response.statusCode >= 400) {
+        if (response.statusCode == 401) {
           await _handleUnauthorized();
           return;
         }
 
-        final firstFail = failed.first;
-        _showError('Failed: ${firstFail.statusCode} - ${firstFail.body}');
+        String message = 'Failed to save attendance.';
+        try {
+          final errorBody = json.decode(response.body);
+          if (errorBody is Map && errorBody['message'] != null) {
+            message = errorBody['message'].toString();
+          }
+        } catch (_) {}
+        _showError(message);
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

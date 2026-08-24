@@ -19,11 +19,13 @@ class StudentCircularsScreen extends StatefulWidget {
   /// student or one of the logged-in student's siblings.
   final String? selectedAdmissionNumber;
   final String? selectedStudentName;
+  final String? initialCircularId;
 
   const StudentCircularsScreen({
     super.key,
     this.selectedAdmissionNumber,
     this.selectedStudentName,
+    this.initialCircularId,
   });
 
   @override
@@ -42,17 +44,20 @@ class _StudentCircularsScreenState extends State<StudentCircularsScreen> {
 
   final _searchController = TextEditingController();
   Timer? _debounce;
+  bool _initialCircularOpened = false;
 
   // Optional socket (commented)
   // IO.Socket? socket;
 
   String? get _admissionForApi {
-    final text = (_activeAdmissionNumber ?? widget.selectedAdmissionNumber ?? '').trim();
+    final text =
+        (_activeAdmissionNumber ?? widget.selectedAdmissionNumber ?? '').trim();
     return text.isEmpty ? null : text;
   }
 
   String get _studentTitleText {
-    final name = (_activeStudentName ?? widget.selectedStudentName ?? '').trim();
+    final name =
+        (_activeStudentName ?? widget.selectedStudentName ?? '').trim();
     final adm = (_admissionForApi ?? '').trim();
 
     if (name.isNotEmpty && adm.isNotEmpty) return '$name • Adm $adm';
@@ -91,18 +96,19 @@ class _StudentCircularsScreenState extends State<StudentCircularsScreen> {
               .trim();
 
       final selectedNameFromWidget = (widget.selectedStudentName ?? '').trim();
-      final selectedNameFromPrefs =
-          (prefs.getString('selectedStudentName') ??
-                  prefs.getString('activeStudentName') ??
-                  '')
-              .trim();
+      final selectedNameFromPrefs = (prefs.getString('selectedStudentName') ??
+              prefs.getString('activeStudentName') ??
+              '')
+          .trim();
 
       if (!mounted) return;
       setState(() {
-        _activeAdmissionNumber =
-            selectedFromWidget.isNotEmpty ? selectedFromWidget : selectedFromPrefs;
-        _activeStudentName =
-            selectedNameFromWidget.isNotEmpty ? selectedNameFromWidget : selectedNameFromPrefs;
+        _activeAdmissionNumber = selectedFromWidget.isNotEmpty
+            ? selectedFromWidget
+            : selectedFromPrefs;
+        _activeStudentName = selectedNameFromWidget.isNotEmpty
+            ? selectedNameFromWidget
+            : selectedNameFromPrefs;
       });
     } catch (e, st) {
       debugPrint('Student circular bootstrap error: $e\n$st');
@@ -128,6 +134,7 @@ class _StudentCircularsScreenState extends State<StudentCircularsScreen> {
 
       if (!mounted) return;
       setState(() => _circulars = allowed);
+      _openInitialCircularIfAvailable();
     } catch (e, st) {
       debugPrint('Error fetching circulars: $e\n$st');
       if (mounted) {
@@ -138,6 +145,18 @@ class _StudentCircularsScreenState extends State<StudentCircularsScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  void _openInitialCircularIfAvailable() {
+    if (_initialCircularOpened) return;
+    final targetId = (widget.initialCircularId ?? '').trim();
+    if (targetId.isEmpty) return;
+    final matches = _circulars.where((item) => item.id == targetId);
+    if (matches.isEmpty) return;
+    _initialCircularOpened = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _showFullView(matches.first);
+    });
   }
 
   // Optional socket initializer if you have a socket server
@@ -163,14 +182,17 @@ class _StudentCircularsScreenState extends State<StudentCircularsScreen> {
     final lowerQ = _query.trim().toLowerCase();
     final sinceDate = _sinceDays == 'all'
         ? null
-        : DateTime.now().subtract(Duration(days: int.tryParse(_sinceDays) ?? 30));
+        : DateTime.now()
+            .subtract(Duration(days: int.tryParse(_sinceDays) ?? 30));
 
     return _circulars.where((c) {
-      if (_onlyWithFiles && (c.fileUrl == null || c.fileUrl!.isEmpty)) return false;
+      if (_onlyWithFiles && (c.fileUrl == null || c.fileUrl!.isEmpty))
+        return false;
       if (sinceDate != null && c.createdAt.isBefore(sinceDate)) return false;
       if (lowerQ.isEmpty) return true;
 
-      final hay = '${c.title} ${c.description ?? ''} ${c.audience}'.toLowerCase();
+      final hay =
+          '${c.title} ${c.description ?? ''} ${c.audience}'.toLowerCase();
       return hay.contains(lowerQ);
     }).toList();
   }
@@ -296,91 +318,101 @@ class _StudentCircularsScreenState extends State<StudentCircularsScreen> {
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(
-                        c.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 15.5,
-                          color: Color(0xFF0F172A),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            c.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 15.5,
+                              color: Color(0xFF0F172A),
+                            ),
+                          ),
                         ),
+                        const SizedBox(width: 8),
+                        if (hasFile)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE7F0FF),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.attach_file_rounded,
+                                    size: 13, color: Color(0xFF1F7AE0)),
+                                SizedBox(width: 3),
+                                Text(
+                                  'File',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 11.5,
+                                    color: Color(0xFF1F7AE0),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      c.description?.trim().isNotEmpty == true
+                          ? c.description!.trim()
+                          : 'No description',
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF475569),
+                        height: 1.35,
+                        fontSize: 13.2,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    if (hasFile)
+                    const SizedBox(height: 10),
+                    Row(children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFE7F0FF),
+                          color: const Color(0xFFECF5FF),
                           borderRadius: BorderRadius.circular(999),
                         ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.attach_file_rounded, size: 13, color: Color(0xFF1F7AE0)),
-                            SizedBox(width: 3),
-                            Text(
-                              'File',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 11.5,
-                                color: Color(0xFF1F7AE0),
-                              ),
-                            ),
-                          ],
+                        child: Text(
+                          c.audience == 'both'
+                              ? 'Students & Staff'
+                              : 'Students',
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF1B6ED6),
+                          ),
                         ),
                       ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  c.description?.trim().isNotEmpty == true
-                      ? c.description!.trim()
-                      : 'No description',
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF475569),
-                    height: 1.35,
-                    fontSize: 13.2,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Row(children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFECF5FF),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      c.audience == 'both' ? 'Students & Staff' : 'Students',
-                      style: const TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF1B6ED6),
+                      const SizedBox(width: 8),
+                      const Icon(Icons.circle,
+                          size: 6, color: Color(0xFFC9D6EA)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _formatDT(c.createdAt),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 12, color: Color(0xFF64748B)),
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  const Icon(Icons.circle, size: 6, color: Color(0xFFC9D6EA)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _formatDT(c.createdAt),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                    ),
-                  ),
-                  const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
-                ]),
-              ]),
+                      const Icon(Icons.chevron_right_rounded,
+                          color: Color(0xFF94A3B8)),
+                    ]),
+                  ]),
             ),
           ],
         ),
@@ -410,7 +442,8 @@ class _StudentCircularsScreenState extends State<StudentCircularsScreen> {
   @override
   Widget build(BuildContext context) {
     final processed = _processed;
-    final totalWithFiles = _circulars.where((c) => c.fileUrl?.trim().isNotEmpty == true).length;
+    final totalWithFiles =
+        _circulars.where((c) => c.fileUrl?.trim().isNotEmpty == true).length;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF6F9FF),
@@ -442,27 +475,31 @@ class _StudentCircularsScreenState extends State<StudentCircularsScreen> {
                 bottomRight: Radius.circular(26),
               ),
             ),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(
                 children: [
                   Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      const Text(
-                        'Student Circulars',
-                        style: TextStyle(
-                          fontSize: 21,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        _studentTitleText,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: Colors.white.withOpacity(.92)),
-                      ),
-                    ]),
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Student Circulars',
+                            style: TextStyle(
+                              fontSize: 21,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            _studentTitleText,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style:
+                                TextStyle(color: Colors.white.withOpacity(.92)),
+                          ),
+                        ]),
                   ),
                   Container(
                     padding: const EdgeInsets.all(12),
@@ -471,21 +508,27 @@ class _StudentCircularsScreenState extends State<StudentCircularsScreen> {
                       borderRadius: BorderRadius.circular(18),
                       border: Border.all(color: Colors.white.withOpacity(.18)),
                     ),
-                    child: const Icon(Icons.campaign_rounded, color: Colors.white),
+                    child:
+                        const Icon(Icons.campaign_rounded, color: Colors.white),
                   ),
                 ],
               ),
               const SizedBox(height: 16),
               Row(
                 children: [
-                  _HeroStat(label: 'Total', value: '${_circulars.length}', icon: Icons.inbox_rounded),
+                  _HeroStat(
+                      label: 'Total',
+                      value: '${_circulars.length}',
+                      icon: Icons.inbox_rounded),
                   const SizedBox(width: 10),
-                  _HeroStat(label: 'Files', value: '$totalWithFiles', icon: Icons.attach_file_rounded),
+                  _HeroStat(
+                      label: 'Files',
+                      value: '$totalWithFiles',
+                      icon: Icons.attach_file_rounded),
                 ],
               ),
             ]),
           ),
-
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Column(children: [
@@ -514,7 +557,9 @@ class _StudentCircularsScreenState extends State<StudentCircularsScreen> {
                     height: 48,
                     width: 48,
                     decoration: BoxDecoration(
-                      color: _onlyWithFiles ? const Color(0xFFE7F0FF) : Colors.white,
+                      color: _onlyWithFiles
+                          ? const Color(0xFFE7F0FF)
+                          : Colors.white,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
                         color: _onlyWithFiles
@@ -533,22 +578,34 @@ class _StudentCircularsScreenState extends State<StudentCircularsScreen> {
               ]),
               const SizedBox(height: 10),
               Row(children: [
-                _FilterChip(label: '7d', selected: _sinceDays == '7', onTap: () => setState(() => _sinceDays = '7')),
+                _FilterChip(
+                    label: '7d',
+                    selected: _sinceDays == '7',
+                    onTap: () => setState(() => _sinceDays = '7')),
                 const SizedBox(width: 8),
-                _FilterChip(label: '30d', selected: _sinceDays == '30', onTap: () => setState(() => _sinceDays = '30')),
+                _FilterChip(
+                    label: '30d',
+                    selected: _sinceDays == '30',
+                    onTap: () => setState(() => _sinceDays = '30')),
                 const SizedBox(width: 8),
-                _FilterChip(label: '90d', selected: _sinceDays == '90', onTap: () => setState(() => _sinceDays = '90')),
+                _FilterChip(
+                    label: '90d',
+                    selected: _sinceDays == '90',
+                    onTap: () => setState(() => _sinceDays = '90')),
                 const SizedBox(width: 8),
-                _FilterChip(label: 'All', selected: _sinceDays == 'all', onTap: () => setState(() => _sinceDays = 'all')),
+                _FilterChip(
+                    label: 'All',
+                    selected: _sinceDays == 'all',
+                    onTap: () => setState(() => _sinceDays = 'all')),
                 const Spacer(),
                 Text(
                   '${processed.length}',
-                  style: const TextStyle(color: Colors.black54, fontWeight: FontWeight.w800),
+                  style: const TextStyle(
+                      color: Colors.black54, fontWeight: FontWeight.w800),
                 ),
               ]),
             ]),
           ),
-
           Expanded(
             child: RefreshIndicator(
               onRefresh: _load,
@@ -556,14 +613,17 @@ class _StudentCircularsScreenState extends State<StudentCircularsScreen> {
                   ? _loadingList()
                   : processed.isEmpty
                       ? ListView(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 34),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 34),
                           children: const [
-                            Icon(Icons.inbox_rounded, size: 62, color: Colors.black26),
+                            Icon(Icons.inbox_rounded,
+                                size: 62, color: Colors.black26),
                             SizedBox(height: 14),
                             Center(
                               child: Text(
                                 'No circulars found',
-                                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w900, fontSize: 16),
                               ),
                             ),
                             SizedBox(height: 6),
@@ -577,9 +637,11 @@ class _StudentCircularsScreenState extends State<StudentCircularsScreen> {
                           ],
                         )
                       : ListView.separated(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
                           itemBuilder: (ctx, i) => _buildCard(processed[i], i),
-                          separatorBuilder: (_, __) => const SizedBox(height: 12),
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 12),
                           itemCount: processed.length,
                         ),
             ),
@@ -661,9 +723,13 @@ class _HeroStat extends StatelessWidget {
           children: [
             Icon(icon, color: Colors.white, size: 19),
             const SizedBox(width: 8),
-            Text(value, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+            Text(value,
+                style: const TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.w900)),
             const SizedBox(width: 5),
-            Text(label, style: TextStyle(color: Colors.white.withOpacity(.86), fontSize: 12)),
+            Text(label,
+                style: TextStyle(
+                    color: Colors.white.withOpacity(.86), fontSize: 12)),
           ],
         ),
       ),
@@ -689,7 +755,8 @@ class _CircularDetailSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasFile = circular.fileUrl != null && circular.fileUrl!.trim().isNotEmpty;
+    final hasFile =
+        circular.fileUrl != null && circular.fileUrl!.trim().isNotEmpty;
     final kind = fileKind(circular.fileUrl);
 
     return Material(
@@ -724,168 +791,193 @@ class _CircularDetailSheet extends StatelessWidget {
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(
-                    circular.title,
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF0F172A),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    crossAxisAlignment: WrapCrossAlignment.center,
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFECF5FF),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          circular.audience == 'both' ? 'Students & Staff' : 'Students',
-                          style: const TextStyle(
-                            color: Color(0xFF1B6ED6),
-                            fontWeight: FontWeight.w800,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                      if (studentTitle.trim().isNotEmpty &&
-                          studentTitle.trim() != 'Latest notices & attachments')
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF1F5F9),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            studentTitle,
-                            style: const TextStyle(
-                              color: Color(0xFF334155),
-                              fontWeight: FontWeight.w800,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
                       Text(
-                        formatDT(circular.createdAt),
-                        style: const TextStyle(color: Colors.black54, fontSize: 12.5),
+                        circular.title,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF0F172A),
+                        ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  if (circular.description != null && circular.description!.trim().isNotEmpty)
-                    Text(
-                      circular.description!.trim(),
-                      style: const TextStyle(fontSize: 15, height: 1.48, color: Color(0xFF334155)),
-                    )
-                  else
-                    const Text(
-                      'No description provided.',
-                      style: TextStyle(fontStyle: FontStyle.italic, color: Colors.black54),
-                    ),
-                  const SizedBox(height: 16),
-                  if (hasFile) ...[
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 9, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFECF5FF),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              circular.audience == 'both'
+                                  ? 'Students & Staff'
+                                  : 'Students',
+                              style: const TextStyle(
+                                color: Color(0xFF1B6ED6),
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                          if (studentTitle.trim().isNotEmpty &&
+                              studentTitle.trim() !=
+                                  'Latest notices & attachments')
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 9, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                studentTitle,
+                                style: const TextStyle(
+                                  color: Color(0xFF334155),
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          Text(
+                            formatDT(circular.createdAt),
+                            style: const TextStyle(
+                                color: Colors.black54, fontSize: 12.5),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      if (circular.description != null &&
+                          circular.description!.trim().isNotEmpty)
+                        Text(
+                          circular.description!.trim(),
+                          style: const TextStyle(
+                              fontSize: 15,
+                              height: 1.48,
+                              color: Color(0xFF334155)),
+                        )
+                      else
                         const Text(
-                          'Attachment',
-                          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+                          'No description provided.',
+                          style: TextStyle(
+                              fontStyle: FontStyle.italic,
+                              color: Colors.black54),
                         ),
-                        TextButton.icon(
-                          onPressed: () => onOpenAttachment(circular.fileUrl!),
-                          icon: const Icon(Icons.open_in_new_rounded, size: 18),
-                          label: const Text('Open'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    if (kind == 'image')
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: CachedNetworkImage(
-                          imageUrl: circular.fileUrl!,
-                          placeholder: (_, __) => Container(height: 190, color: Colors.grey[100]),
-                          errorWidget: (_, __, ___) => Container(
-                            height: 190,
-                            color: Colors.grey[100],
-                            child: const Icon(Icons.broken_image_rounded),
-                          ),
-                          fit: BoxFit.cover,
-                          width: double.infinity,
-                          height: 230,
-                        ),
-                      )
-                    else if (kind == 'pdf')
-                      Container(
-                        height: 220,
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(14),
-                          color: const Color(0xFFF8FAFC),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
-                        ),
-                        child: const Center(
-                          child: Column(mainAxisSize: MainAxisSize.min, children: [
-                            Icon(Icons.picture_as_pdf_rounded, size: 46, color: Color(0xFFDC2626)),
-                            SizedBox(height: 8),
-                            Text(
-                              'PDF preview not embedded\nOpen to view',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: Colors.black45),
-                            ),
-                          ]),
-                        ),
-                      )
-                    else
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(14),
-                          color: const Color(0xFFF8FAFC),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
-                        ),
-                        child: const Text('Preview not available. Use Open Attachment.'),
-                      ),
-                  ],
-                  const SizedBox(height: 22),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () => Navigator.of(context).pop(),
-                          icon: const Icon(Icons.close_rounded),
-                          label: const Text('Close'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.grey[200],
-                            foregroundColor: Colors.black87,
-                            elevation: 0,
-                          ),
-                        ),
-                      ),
+                      const SizedBox(height: 16),
                       if (hasFile) ...[
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: () => onOpenAttachment(circular.fileUrl!),
-                            icon: const Icon(Icons.open_in_new_rounded),
-                            label: const Text('Open Attachment'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF1F7AE0),
-                              foregroundColor: Colors.white,
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Attachment',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w900, fontSize: 15),
+                            ),
+                            TextButton.icon(
+                              onPressed: () =>
+                                  onOpenAttachment(circular.fileUrl!),
+                              icon: const Icon(Icons.open_in_new_rounded,
+                                  size: 18),
+                              label: const Text('Open'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        if (kind == 'image')
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: CachedNetworkImage(
+                              imageUrl: circular.fileUrl!,
+                              placeholder: (_, __) => Container(
+                                  height: 190, color: Colors.grey[100]),
+                              errorWidget: (_, __, ___) => Container(
+                                height: 190,
+                                color: Colors.grey[100],
+                                child: const Icon(Icons.broken_image_rounded),
+                              ),
+                              fit: BoxFit.cover,
+                              width: double.infinity,
+                              height: 230,
+                            ),
+                          )
+                        else if (kind == 'pdf')
+                          Container(
+                            height: 220,
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(14),
+                              color: const Color(0xFFF8FAFC),
+                              border:
+                                  Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: const Center(
+                              child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.picture_as_pdf_rounded,
+                                        size: 46, color: Color(0xFFDC2626)),
+                                    SizedBox(height: 8),
+                                    Text(
+                                      'PDF preview not embedded\nOpen to view',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(color: Colors.black45),
+                                    ),
+                                  ]),
+                            ),
+                          )
+                        else
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(14),
+                              color: const Color(0xFFF8FAFC),
+                              border:
+                                  Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: const Text(
+                                'Preview not available. Use Open Attachment.'),
+                          ),
+                      ],
+                      const SizedBox(height: 22),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () => Navigator.of(context).pop(),
+                              icon: const Icon(Icons.close_rounded),
+                              label: const Text('Close'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.grey[200],
+                                foregroundColor: Colors.black87,
+                                elevation: 0,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ]),
+                          if (hasFile) ...[
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: () =>
+                                    onOpenAttachment(circular.fileUrl!),
+                                icon: const Icon(Icons.open_in_new_rounded),
+                                label: const Text('Open Attachment'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF1F7AE0),
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ]),
               ),
             ),
           ],

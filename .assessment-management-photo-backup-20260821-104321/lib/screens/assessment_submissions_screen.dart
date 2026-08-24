@@ -9,7 +9,6 @@ import 'package:intl/intl.dart';
 
 import '../models/assessment_models.dart';
 import '../services/assessment_api.dart';
-import '../services/api_service.dart';
 
 class AssessmentSubmissionsScreen extends StatefulWidget {
   final Assessment assessment;
@@ -121,7 +120,7 @@ class _AssessmentSubmissionsScreenState extends State<AssessmentSubmissionsScree
     }
   }
 
-  Future<void> _evaluate(AssessmentSubmission row, {bool readOnly = false}) async {
+  Future<void> _evaluate(AssessmentSubmission row) async {
     final attempt = row.latestAttempt;
     if (attempt == null) return;
 
@@ -152,7 +151,7 @@ class _AssessmentSubmissionsScreenState extends State<AssessmentSubmissionsScree
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
-          title: Text(readOnly ? 'Student Result — ${row.studentName}' : 'Review ${row.studentName}'),
+          title: Text('Review ${row.studentName}'),
           content: SizedBox(
             width: 680,
             child: SingleChildScrollView(
@@ -211,16 +210,14 @@ class _AssessmentSubmissionsScreenState extends State<AssessmentSubmissionsScree
                                   width: 120,
                                   child: TextField(
                                     controller: marksByAnswer[answer.id],
-                                    readOnly: readOnly,
                                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                     decoration: InputDecoration(labelText: 'Marks / ${q?.marks.g ?? '-'}', border: const OutlineInputBorder()),
-                                    onChanged: readOnly ? null : (_) => setDialogState(() => marks.text = '${calculatedTotal()}'),
+                                    onChanged: (_) => setDialogState(() => marks.text = '${calculatedTotal()}'),
                                   ),
                                 ),
                                 const SizedBox(width: 10),
                                 Expanded(child: TextField(
                                   controller: remarksByAnswer[answer.id],
-                                  readOnly: readOnly,
                                   decoration: const InputDecoration(labelText: 'Why marks cut / remark', border: OutlineInputBorder()),
                                 )),
                               ]),
@@ -244,68 +241,64 @@ class _AssessmentSubmissionsScreenState extends State<AssessmentSubmissionsScree
                   const SizedBox(height: 12),
                   TextField(
                     controller: marks,
-                    readOnly: readOnly || attempt.answers.isNotEmpty,
+                    readOnly: attempt.answers.isNotEmpty,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     decoration: InputDecoration(labelText: 'Final marks / ${widget.assessment.totalMarks.g}', border: const OutlineInputBorder()),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: feedback,
-                    readOnly: readOnly,
                     maxLines: 3,
                     decoration: const InputDecoration(labelText: 'Overall feedback', border: OutlineInputBorder()),
                   ),
-                  if (!readOnly) ...[
-                    const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      onPressed: () async {
-                        final files = await openFiles(acceptedTypeGroups: const [
-                          XTypeGroup(label: 'Corrected sheets', extensions: ['pdf', 'jpg', 'jpeg', 'png'])
-                        ]);
-                        setDialogState(() { corrected..clear()..addAll(files.map((f) => f.path)); });
-                      },
-                      icon: const Icon(Icons.attach_file),
-                      label: Text(corrected.isEmpty ? 'Attach corrected sheet' : '${corrected.length} file(s) attached'),
-                    ),
-                  ],
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final files = await openFiles(acceptedTypeGroups: const [
+                        XTypeGroup(label: 'Corrected sheets', extensions: ['pdf', 'jpg', 'jpeg', 'png'])
+                      ]);
+                      setDialogState(() { corrected..clear()..addAll(files.map((f) => f.path)); });
+                    },
+                    icon: const Icon(Icons.attach_file),
+                    label: Text(corrected.isEmpty ? 'Attach corrected sheet' : '${corrected.length} file(s) attached'),
+                  ),
                 ],
               ),
             ),
           ),
           actions: [
-            if (!readOnly && attempt.submissionSource != 'online')
+            if (attempt.submissionSource != 'online')
               TextButton.icon(
                 onPressed: () { Navigator.pop(context, false); _rerunAi(row); },
                 icon: const Icon(Icons.auto_awesome),
                 label: const Text('Re-run AI'),
               ),
-            TextButton(onPressed: () => Navigator.pop(context, false), child: Text(readOnly ? 'Close' : 'Cancel')),
-            if (!readOnly)
-              FilledButton.icon(
-                onPressed: () async {
-                  try {
-                    final answerGrades = attempt.answers.map((a) => {
-                      'answer_id': a.id,
-                      'awarded_marks': double.tryParse(marksByAnswer[a.id]?.text ?? '') ?? 0,
-                      'teacher_remark': remarksByAnswer[a.id]?.text.trim() ?? '',
-                    }).toList();
-                    final total = attempt.answers.isNotEmpty ? calculatedTotal() : (double.tryParse(marks.text) ?? 0);
-                    await AssessmentApi.grade(
-                      assessmentId: widget.assessment.id,
-                      studentId: row.studentId,
-                      obtainedMarks: total,
-                      feedback: feedback.text.trim(),
-                      answerGrades: answerGrades,
-                      correctedPaths: corrected,
-                    );
-                    if (context.mounted) Navigator.pop(context, true);
-                  } catch (e) {
-                    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
-                  }
-                },
-                icon: const Icon(Icons.verified_outlined),
-                label: const Text('Approve & Save'),
-              ),
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            FilledButton.icon(
+              onPressed: () async {
+                try {
+                  final answerGrades = attempt.answers.map((a) => {
+                    'answer_id': a.id,
+                    'awarded_marks': double.tryParse(marksByAnswer[a.id]?.text ?? '') ?? 0,
+                    'teacher_remark': remarksByAnswer[a.id]?.text.trim() ?? '',
+                  }).toList();
+                  final total = attempt.answers.isNotEmpty ? calculatedTotal() : (double.tryParse(marks.text) ?? 0);
+                  await AssessmentApi.grade(
+                    assessmentId: widget.assessment.id,
+                    studentId: row.studentId,
+                    obtainedMarks: total,
+                    feedback: feedback.text.trim(),
+                    answerGrades: answerGrades,
+                    correctedPaths: corrected,
+                  );
+                  if (context.mounted) Navigator.pop(context, true);
+                } catch (e) {
+                  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+                }
+              },
+              icon: const Icon(Icons.verified_outlined),
+              label: const Text('Approve & Save'),
+            ),
           ],
         ),
       ),
@@ -319,62 +312,6 @@ class _AssessmentSubmissionsScreenState extends State<AssessmentSubmissionsScree
       _snack('Teacher evaluation approved and saved.');
       await _load();
     }
-  }
-
-  String? _studentPhotoUrl(String? raw) {
-    if (raw == null || raw.trim().isEmpty) return null;
-    final value = raw.trim().replaceAll('\\', '/');
-    if (value.startsWith('http://') || value.startsWith('https://')) return value;
-    final base = Uri.tryParse(ApiService.baseUrl);
-    if (base == null || !base.hasAuthority) return null;
-    final origin = '${base.scheme}://${base.authority}';
-    if (value.startsWith('/')) return '$origin$value';
-    if (value.startsWith('uploads/')) return '$origin/$value';
-    return '$origin/uploads/photoes/students/${Uri.encodeComponent(value)}';
-  }
-
-  Widget _studentAvatar(AssessmentSubmission row) {
-    final url = _studentPhotoUrl(row.photoUrl);
-    final initial = row.studentName.isEmpty ? '?' : row.studentName[0].toUpperCase();
-    return CircleAvatar(
-      radius: 23,
-      backgroundImage: url == null ? null : NetworkImage(url),
-      child: url == null ? Text(initial) : null,
-    );
-  }
-
-  Widget _managementSummary() {
-    final totalMarks = widget.assessment.totalMarks;
-    final submitted = _rows.where((r) => const ['submitted', 'evaluated'].contains(r.status)).length;
-    final evaluated = _rows.where((r) => r.obtainedMarks != null || r.status == 'evaluated').length;
-    final review = _rows.where((r) => r.latestAttempt?.teacherReviewRequired == true).length;
-    final percentages = _rows.map((r) => r.percentage ?? (r.obtainedMarks != null && totalMarks > 0 ? r.obtainedMarks! / totalMarks * 100 : null)).whereType<double>().toList();
-    final average = percentages.isEmpty ? null : percentages.reduce((a, b) => a + b) / percentages.length;
-    final below50 = percentages.where((p) => p < 50).length;
-    Widget metric(String label, String value, IconData icon) => Container(
-      width: 150,
-      padding: const EdgeInsets.all(11),
-      decoration: BoxDecoration(color: const Color(0xFFF5F7FF), borderRadius: BorderRadius.circular(12)),
-      child: Row(children: [Icon(icon, color: Colors.indigo), const SizedBox(width: 8), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(label, style: const TextStyle(fontSize: 11, color: Colors.black54)), Text(value, style: const TextStyle(fontWeight: FontWeight.w800))]))]),
-    );
-    return Card(
-      margin: const EdgeInsets.only(bottom: 14),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(widget.assessment.canManage ? 'Submission Summary' : 'Management Result View', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-          if (!widget.assessment.canManage) const Padding(padding: EdgeInsets.only(top: 3, bottom: 10), child: Text('Read-only: view student photos, scores, AI findings and scanned papers.', style: TextStyle(color: Colors.black54, fontSize: 12))),
-          Wrap(spacing: 8, runSpacing: 8, children: [
-            metric('Students', '${_rows.length}', Icons.people_outline),
-            metric('Submitted', '$submitted', Icons.send_outlined),
-            metric('Evaluated', '$evaluated', Icons.verified_outlined),
-            metric('Average', average == null ? '—' : '${average.toStringAsFixed(1)}%', Icons.insights_outlined),
-            metric('Below 50%', '$below50', Icons.warning_amber_outlined),
-            metric('AI Review', '$review', Icons.auto_awesome_outlined),
-          ]),
-        ]),
-      ),
-    );
   }
 
   Widget _aiHeader(AssessmentAttempt attempt) {
@@ -423,10 +360,9 @@ class _AssessmentSubmissionsScreenState extends State<AssessmentSubmissionsScree
           ? const Center(child: CircularProgressIndicator())
           : ListView.builder(
               padding: const EdgeInsets.all(14),
-              itemCount: _rows.length + 1,
+              itemCount: _rows.length,
               itemBuilder: (context, index) {
-                if (index == 0) return _managementSummary();
-                final row = _rows[index - 1];
+                final row = _rows[index];
                 final attempt = row.latestAttempt;
                 final busy = _busyStudentId == row.studentId;
                 return Card(
@@ -434,7 +370,7 @@ class _AssessmentSubmissionsScreenState extends State<AssessmentSubmissionsScree
                   child: Padding(
                     padding: const EdgeInsets.all(12),
                     child: Row(children: [
-                      _studentAvatar(row),
+                      CircleAvatar(child: Text(row.studentName.isEmpty ? '?' : row.studentName[0].toUpperCase())),
                       const SizedBox(width: 10),
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text(row.studentName, style: const TextStyle(fontWeight: FontWeight.w700)),
@@ -447,15 +383,15 @@ class _AssessmentSubmissionsScreenState extends State<AssessmentSubmissionsScree
                           Text('AI: ${attempt.aiEvaluationStatus.replaceAll('_', ' ')}', style: const TextStyle(fontSize: 12, color: Colors.indigo)),
                       ])),
                       if (busy) const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)) else ...[
-                        if (widget.assessment.canManage) IconButton(tooltip: 'Scan paper', onPressed: () => _teacherScan(row), icon: const Icon(Icons.document_scanner_outlined)),
-                        if (attempt != null) IconButton(tooltip: widget.assessment.canManage ? 'Review result' : 'View result', onPressed: () => _evaluate(row, readOnly: !widget.assessment.canManage), icon: Icon(widget.assessment.canManage ? Icons.fact_check_outlined : Icons.visibility_outlined)),
+                        IconButton(tooltip: 'Scan paper', onPressed: () => _teacherScan(row), icon: const Icon(Icons.document_scanner_outlined)),
+                        if (attempt != null) IconButton(tooltip: 'Review result', onPressed: () => _evaluate(row), icon: const Icon(Icons.fact_check_outlined)),
                       ],
                     ]),
                   ),
                 );
               },
             ),
-      floatingActionButton: widget.assessment.canManage ? FloatingActionButton.extended(
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: () async {
           try {
             await AssessmentApi.action(widget.assessment.id, 'results/publish');
@@ -464,7 +400,7 @@ class _AssessmentSubmissionsScreenState extends State<AssessmentSubmissionsScree
         },
         icon: const Icon(Icons.publish),
         label: const Text('Publish Results'),
-      ) : null,
+      ),
     );
   }
 }

@@ -13,6 +13,8 @@ class TeacherMarksEntryScreen extends StatefulWidget {
 }
 
 class _TeacherMarksEntryScreenState extends State<TeacherMarksEntryScreen> {
+  static const _classLevelSection = '__class__';
+
   final _formKey = GlobalKey<FormState>();
 
   bool _initialLoading = true;
@@ -23,6 +25,7 @@ class _TeacherMarksEntryScreenState extends State<TeacherMarksEntryScreen> {
   List<Map<String, dynamic>> _accessibleSchedules = [];
   List<Map<String, dynamic>> _students = [];
   List<Map<String, dynamic>> _components = [];
+  final Set<String> _selectedComponentIds = {};
   List<dynamic> _gradeOptions = [];
 
   String? _sessionId;
@@ -91,7 +94,21 @@ class _TeacherMarksEntryScreenState extends State<TeacherMarksEntryScreen> {
         final rows = decoded is Map
             ? _asMapList(decoded['schedules'])
             : <Map<String, dynamic>>[];
-        if (mounted) setState(() => _accessibleSchedules = rows);
+        if (mounted) {
+          setState(() {
+            _accessibleSchedules = rows;
+            final selectedSessionIsAccessible = rows.any(
+              (row) => '${row['session_id']}' == '${_sessionId ?? ''}',
+            );
+            if (rows.isNotEmpty && !selectedSessionIsAccessible) {
+              _sessionId = rows.first['session_id']?.toString();
+              _classId = null;
+              _sectionId = null;
+              _examId = null;
+              _subjectId = null;
+            }
+          });
+        }
       }
     } catch (_) {}
   }
@@ -148,15 +165,28 @@ class _TeacherMarksEntryScreenState extends State<TeacherMarksEntryScreen> {
     return unique.values.toList();
   }
 
+  String _sectionIdOf(Map<String, dynamic> row) =>
+      row['section_id'] == null ? _classLevelSection : '${row['section_id']}';
+
+  bool _sectionMatches(Map<String, dynamic> row, String sectionId) =>
+      _sectionIdOf(row) == sectionId;
+
   List<Map<String, dynamic>> get _classes =>
       _uniqueBy(_sessionSchedules, 'class_id');
 
   List<Map<String, dynamic>> get _filteredSections {
     if (_classId == null || _classId!.isEmpty) return [];
-    return _uniqueBy(
-      _sessionSchedules.where((row) => '${row['class_id']}' == _classId),
-      'section_id',
-    );
+    final unique = <String, Map<String, dynamic>>{};
+    for (final row
+        in _sessionSchedules.where((row) => '${row['class_id']}' == _classId)) {
+      final sectionId = _sectionIdOf(row);
+      unique[sectionId] = {
+        ...row,
+        'section_id': sectionId,
+        'section_name': row['section_name'] ?? 'Class Level (No Section)',
+      };
+    }
+    return unique.values.toList();
   }
 
   List<Map<String, dynamic>> get _filteredExams {
@@ -164,7 +194,7 @@ class _TeacherMarksEntryScreenState extends State<TeacherMarksEntryScreen> {
     return _uniqueBy(
       _sessionSchedules.where((row) =>
           '${row['class_id']}' == _classId &&
-          '${row['section_id']}' == _sectionId),
+          _sectionMatches(row, _sectionId!)),
       'exam_id',
     );
   }
@@ -174,7 +204,7 @@ class _TeacherMarksEntryScreenState extends State<TeacherMarksEntryScreen> {
     return _uniqueBy(
       _sessionSchedules.where((row) =>
           '${row['class_id']}' == _classId &&
-          '${row['section_id']}' == _sectionId &&
+          _sectionMatches(row, _sectionId!) &&
           '${row['exam_id']}' == _examId),
       'subject_id',
     );
@@ -208,6 +238,7 @@ class _TeacherMarksEntryScreenState extends State<TeacherMarksEntryScreen> {
     _gradeAttendance.clear();
     _students = [];
     _components = [];
+    _selectedComponentIds.clear();
     _gradeOptions = [];
     _examScheduleId = null;
     _evaluationMode = 'MARKS';
@@ -245,6 +276,9 @@ class _TeacherMarksEntryScreenState extends State<TeacherMarksEntryScreen> {
                 .toUpperCase();
         _students = _asMapList(data['students']);
         _components = _asMapList(data['components']);
+        _selectedComponentIds
+          ..clear()
+          ..addAll(_components.map(_componentId));
         _gradeOptions = data['grade_options'] is List
             ? data['grade_options'] as List
             : data['gradeOptions'] is List
@@ -290,7 +324,8 @@ class _TeacherMarksEntryScreenState extends State<TeacherMarksEntryScreen> {
 
     for (final student in _students) {
       final studentId = student['id'];
-      for (final component in _components) {
+      for (final component in _selectedComponents) {
+        if (component['is_locked'] == true) continue;
         final componentId = component['component_id'] ?? component['id'];
         final key = '${studentId}_$componentId';
 
@@ -312,6 +347,12 @@ class _TeacherMarksEntryScreenState extends State<TeacherMarksEntryScreen> {
           });
         }
       }
+    }
+
+    if (marksData.isEmpty) {
+      setState(() => _saving = false);
+      _showSnack('Select at least one unlocked component to save.');
+      return;
     }
 
     try {
@@ -360,7 +401,11 @@ class _TeacherMarksEntryScreenState extends State<TeacherMarksEntryScreen> {
       floatingActionButton: _students.isEmpty
           ? null
           : FloatingActionButton.extended(
-              onPressed: _saving ? null : _saveMarks,
+              onPressed: _saving ||
+                      !_selectedComponents
+                          .any((component) => component['is_locked'] != true)
+                  ? null
+                  : _saveMarks,
               icon: _saving
                   ? const SizedBox(
                       width: 18,
@@ -386,8 +431,11 @@ class _TeacherMarksEntryScreenState extends State<TeacherMarksEntryScreen> {
                     )
                   else if (_students.isEmpty)
                     _emptyState()
-                  else
+                  else ...[
+                    _componentSelector(),
+                    const SizedBox(height: 12),
                     ..._students.map(_studentMarksCard),
+                  ],
                   const SizedBox(height: 90),
                 ],
               ),
@@ -555,6 +603,85 @@ class _TeacherMarksEntryScreenState extends State<TeacherMarksEntryScreen> {
     );
   }
 
+  String _componentId(Map<String, dynamic> component) =>
+      '${component['component_id'] ?? component['id']}';
+
+  String _componentLabel(Map<String, dynamic> component) =>
+      '${component['abbreviation'] ?? component['component_name'] ?? component['name'] ?? 'Component'}';
+
+  List<Map<String, dynamic>> get _selectedComponents => _components
+      .where((component) =>
+          _selectedComponentIds.contains(_componentId(component)))
+      .toList();
+
+  Widget _componentSelector() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Components to enter',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 4),
+          const Text(
+            'Choose one or more. Only selected components are shown and saved.',
+            style: TextStyle(color: Color(0xFF475569)),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _components.map((component) {
+              final id = _componentId(component);
+              final selected = _selectedComponentIds.contains(id);
+              final locked = component['is_locked'] == true;
+              return FilterChip(
+                selected: selected,
+                avatar: locked ? const Icon(Icons.lock, size: 16) : null,
+                label: Text(_componentLabel(component)),
+                onSelected: (value) => setState(() {
+                  value
+                      ? _selectedComponentIds.add(id)
+                      : _selectedComponentIds.remove(id);
+                }),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              TextButton(
+                onPressed: () => setState(() {
+                  _selectedComponentIds
+                    ..clear()
+                    ..addAll(_components.map(_componentId));
+                }),
+                child: const Text('Select all'),
+              ),
+              TextButton(
+                onPressed: () => setState(_selectedComponentIds.clear),
+                child: const Text('Clear'),
+              ),
+              const Spacer(),
+              Text(
+                  '${_selectedComponents.length}/${_components.length} selected',
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+            ],
+          ),
+          if (_selectedComponentIds.isEmpty)
+            const Text('Select at least one component to continue.',
+                style:
+                    TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+
   Widget _studentMarksCard(Map<String, dynamic> student) {
     final studentId = '${student['id']}';
     final name =
@@ -576,7 +703,7 @@ class _TeacherMarksEntryScreenState extends State<TeacherMarksEntryScreen> {
             style: const TextStyle(fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 10),
-          ..._components.map((component) {
+          ..._selectedComponents.map((component) {
             final componentId =
                 '${component['component_id'] ?? component['id']}';
             final key = '${studentId}_$componentId';
@@ -609,22 +736,28 @@ class _TeacherMarksEntryScreenState extends State<TeacherMarksEntryScreen> {
                             DropdownMenuItem(value: 'A', child: Text('A')),
                             DropdownMenuItem(value: 'L', child: Text('L')),
                           ],
-                          onChanged: (value) => setState(() {
-                            if (_evaluationMode == 'GRADE') {
-                              _gradeAttendance[key] = value ?? 'P';
-                            } else {
-                              _attendance[key] = value ?? 'P';
-                            }
-                          }),
+                          onChanged: component['is_locked'] == true
+                              ? null
+                              : (value) => setState(() {
+                                    if (_evaluationMode == 'GRADE') {
+                                      _gradeAttendance[key] = value ?? 'P';
+                                    } else {
+                                      _attendance[key] = value ?? 'P';
+                                    }
+                                  }),
                         ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: _evaluationMode == 'GRADE'
-                            ? _gradeDropdown(key)
+                            ? _gradeDropdown(
+                                key,
+                                enabled: component['is_locked'] != true,
+                              )
                             : TextField(
                                 controller: _marksControllers[key],
-                                enabled: (_attendance[key] ?? 'P') == 'P',
+                                enabled: component['is_locked'] != true &&
+                                    (_attendance[key] ?? 'P') == 'P',
                                 keyboardType:
                                     const TextInputType.numberWithOptions(
                                   decimal: true,
@@ -647,7 +780,7 @@ class _TeacherMarksEntryScreenState extends State<TeacherMarksEntryScreen> {
     );
   }
 
-  Widget _gradeDropdown(String key) {
+  Widget _gradeDropdown(String key, {bool enabled = true}) {
     final labels = _gradeOptions
         .map((item) => item is Map
             ? '${item['grade'] ?? item['name'] ?? item['label'] ?? item['title'] ?? ''}'
@@ -666,7 +799,9 @@ class _TeacherMarksEntryScreenState extends State<TeacherMarksEntryScreen> {
       items: labels
           .map((label) => DropdownMenuItem(value: label, child: Text(label)))
           .toList(),
-      onChanged: (value) => setState(() => _gradeValues[key] = value ?? ''),
+      onChanged: enabled
+          ? (value) => setState(() => _gradeValues[key] = value ?? '')
+          : null,
     );
   }
 }

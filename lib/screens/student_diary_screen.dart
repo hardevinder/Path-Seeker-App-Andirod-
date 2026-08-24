@@ -13,7 +13,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/constants.dart';
 
 class StudentDiaryScreen extends StatefulWidget {
-  const StudentDiaryScreen({super.key});
+  final String? initialDiaryId;
+
+  const StudentDiaryScreen({super.key, this.initialDiaryId});
 
   @override
   State<StudentDiaryScreen> createState() => _StudentDiaryScreenState();
@@ -36,6 +38,7 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
   String? activeAdmission;
   String? loggedInAdmission;
   final Set<String> _acknowledgingDiaryIds = <String>{};
+  bool _initialDiaryOpened = false;
 
   @override
   void initState() {
@@ -283,6 +286,7 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
           diaryList = rows;
           error = null;
         });
+        _openInitialDiaryIfAvailable();
       } else if (res.statusCode == 401) {
         setState(() => error = 'Unauthorized. Please login again.');
       } else {
@@ -296,6 +300,21 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
       _isFetching = false;
       if (!mounted) return;
       setState(() => loading = false);
+    }
+  }
+
+  void _openInitialDiaryIfAvailable() {
+    if (_initialDiaryOpened) return;
+    final targetId = (widget.initialDiaryId ?? '').trim();
+    if (targetId.isEmpty) return;
+    final index =
+        diaryList.indexWhere((row) => _safeStr(row['id']) == targetId);
+    if (index < 0) return;
+    _initialDiaryOpened = true;
+    final diary = diaryList[index];
+    setState(() => expandedIndex = index);
+    if (!_isDiaryAcknowledged(diary)) {
+      _acknowledgeDiary(targetId);
     }
   }
 
@@ -603,8 +622,8 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
             Text(
               error ?? 'Something went wrong',
               textAlign: TextAlign.center,
-              style:
-                  const TextStyle(color: Colors.red, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                  color: Colors.red, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 12),
             ElevatedButton.icon(
@@ -761,13 +780,15 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
                 secondChild: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(content, style: const TextStyle(color: Colors.black87)),
+                    Text(content,
+                        style: const TextStyle(color: Colors.black87)),
                     if (attachments.isNotEmpty) const SizedBox(height: 10),
                     if (attachments.isNotEmpty)
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
-                        children: attachments.map(_buildAttachmentChip).toList(),
+                        children:
+                            attachments.map(_buildAttachmentChip).toList(),
                       ),
                     const SizedBox(height: 14),
                     Row(
@@ -797,9 +818,10 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
-                            onPressed: isAcking || isAcknowledged || diaryId.isEmpty
-                                ? null
-                                : () => _acknowledgeDiary(diaryId),
+                            onPressed:
+                                isAcking || isAcknowledged || diaryId.isEmpty
+                                    ? null
+                                    : () => _acknowledgeDiary(diaryId),
                             icon: isAcking
                                 ? const SizedBox(
                                     width: 18,
@@ -883,7 +905,8 @@ class _StudentDiaryScreenState extends State<StudentDiaryScreen>
                           child: diaryList.isEmpty
                               ? _buildEmpty()
                               : ListView.builder(
-                                  physics: const AlwaysScrollableScrollPhysics(),
+                                  physics:
+                                      const AlwaysScrollableScrollPhysics(),
                                   padding:
                                       const EdgeInsets.fromLTRB(12, 0, 12, 12),
                                   itemCount: diaryList.length,

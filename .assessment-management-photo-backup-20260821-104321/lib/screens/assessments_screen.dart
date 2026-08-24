@@ -29,7 +29,7 @@ class AssessmentsScreen extends StatefulWidget {
 class _AssessmentsScreenState extends State<AssessmentsScreen> {
   List<Assessment> _rows = [];
   bool _loading = true;
-  bool _canCreate = false;
+  bool _canManage = false;
   bool _isStudent = false;
   String _filter = 'all';
 
@@ -61,11 +61,14 @@ class _AssessmentsScreenState extends State<AssessmentsScreen> {
       }
     }
     _isStudent = roles.contains('student');
-    _canCreate = roles.any({
+    _canManage = roles.any({
       'teacher',
       'admin',
       'superadmin',
       'super_admin',
+      'academic_coordinator',
+      'coordinator',
+      'principal',
     }.contains);
     await _load();
   }
@@ -233,7 +236,7 @@ class _AssessmentsScreenState extends State<AssessmentsScreen> {
           ),
         ],
       ),
-      floatingActionButton: _canCreate
+      floatingActionButton: _canManage
           ? FloatingActionButton.extended(
               onPressed: () => _createOrEdit(),
               icon: const Icon(Icons.add),
@@ -296,7 +299,7 @@ class _AssessmentsScreenState extends State<AssessmentsScreen> {
                 _meta(Icons.person_outline, row.teacherName),
               ],
             ),
-            if (!_canCreate && enrollment != null) ...[
+            if (!_canManage && enrollment != null) ...[
               const Divider(height: 26),
               Container(
                 width: double.infinity,
@@ -412,7 +415,7 @@ class _AssessmentsScreenState extends State<AssessmentsScreen> {
                     icon: const Icon(Icons.lock_clock_outlined),
                     label: const Text('Close'),
                   ),
-                if (row.canViewSubmissions &&
+                if (row.canManage &&
                     !const ['draft', 'scheduled', 'cancelled']
                         .contains(row.status))
                   FilledButton.tonalIcon(
@@ -424,7 +427,7 @@ class _AssessmentsScreenState extends State<AssessmentsScreen> {
                       ),
                     ).then((_) => _load()),
                     icon: const Icon(Icons.fact_check_outlined),
-                    label: Text(row.canManage ? 'Submissions' : 'Student Results'),
+                    label: const Text('Submissions'),
                   ),
                 if (row.canManage &&
                     !const ['cancelled', 'result_published']

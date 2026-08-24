@@ -134,7 +134,6 @@ class Assessment {
   final String subjectName;
   final String teacherName;
   final bool canManage;
-  final bool canViewSubmissions;
   final List<AssessmentQuestion> questions;
   final List<AssessmentFileItem> files;
   final AssessmentEnrollment? enrollment;
@@ -163,7 +162,6 @@ class Assessment {
     required this.subjectName,
     required this.teacherName,
     required this.canManage,
-    required this.canViewSubmissions,
     required this.questions,
     required this.files,
     this.enrollment,
@@ -193,7 +191,6 @@ class Assessment {
         subjectName: _nested(json, 'subject', 'name'),
         teacherName: _nested(json, 'teacher', 'name'),
         canManage: json['can_manage'] == true,
-        canViewSubmissions: json['can_view_submissions'] == true || json['can_manage'] == true,
         questions: _mapList(json['questions'], AssessmentQuestion.fromJson),
         files: _mapList(json['files'], AssessmentFileItem.fromJson),
         enrollment: json['enrollment'] is Map
@@ -323,9 +320,7 @@ class AssessmentSubmission {
   final String status;
   final String studentName;
   final String admissionNumber;
-  final String? photoUrl;
   final double? obtainedMarks;
-  final double? percentage;
   final String? feedback;
   final DateTime? submittedAt;
   final AssessmentAttempt? latestAttempt;
@@ -336,9 +331,7 @@ class AssessmentSubmission {
     required this.status,
     required this.studentName,
     required this.admissionNumber,
-    this.photoUrl,
     this.obtainedMarks,
-    this.percentage,
     this.feedback,
     this.submittedAt,
     this.latestAttempt,
@@ -351,9 +344,7 @@ class AssessmentSubmission {
         status: json['status']?.toString() ?? 'assigned',
         studentName: _nested(json, 'student', 'name'),
         admissionNumber: _nested(json, 'student', 'admission_number'),
-        photoUrl: _nested(json, 'student', 'photo_url').isNotEmpty ? _nested(json, 'student', 'photo_url') : (_nested(json, 'student', 'photo').isNotEmpty ? _nested(json, 'student', 'photo') : null),
         obtainedMarks: _nullableDouble(json['obtained_marks']),
-        percentage: _nullableDouble(json['percentage']),
         feedback: json['teacher_feedback']?.toString(),
         submittedAt: _date(json['submitted_at']),
         latestAttempt: json['latestAttempt'] is Map

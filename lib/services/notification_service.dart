@@ -7,6 +7,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../firebase_options.dart';
@@ -15,6 +16,9 @@ import '../screens/student/student_bus_live_screen.dart';
 import '../screens/student/student_exam_seat_screen.dart';
 import '../screens/teacher/invigilation_duties_screen.dart';
 import '../screens/school_chat_screen.dart'; // SCHOOL_CHAT_V16_NOTIFICATION_IMPORT
+import '../screens/student_circulars_screen.dart';
+import '../screens/student_diary_screen.dart';
+import '../screens/teacher/teacher_circulars_screen.dart';
 
 class NotificationService {
   static bool _firebaseEnsured = false;
@@ -184,8 +188,9 @@ class NotificationService {
     Map<String, dynamic> data,
   ) async {
     final screen = (data['screen'] ?? '').toString();
-    final diaryId = (data['diaryId'] ?? '').toString();
-    final circularId = (data['circularId'] ?? '').toString();
+    final diaryId = (data['diaryId'] ?? data['diary_id'] ?? '').toString();
+    final circularId =
+        (data['circularId'] ?? data['circular_id'] ?? '').toString();
     final paymentLink = (data['paymentLink'] ?? '').toString();
 
     final normalizedScreen =
@@ -256,13 +261,68 @@ class NotificationService {
       return;
     }
 
-    if (screen == 'DiaryScreen' && diaryId.isNotEmpty) {
-      navigatorKey.currentState?.pushNamed('/diary', arguments: diaryId);
+    if (normalizedScreen == 'teachersubstitutions' ||
+        type == 'teacher_substitution') {
+      navigatorKey.currentState?.pushNamed('/teacher/substitutions');
       return;
     }
 
-    if (screen == 'CircularScreen' && circularId.isNotEmpty) {
-      navigatorKey.currentState?.pushNamed('/circular', arguments: circularId);
+    if (normalizedScreen == 'studentattendance' ||
+        type == 'student_attendance') {
+      navigatorKey.currentState?.pushNamed('/attendance');
+      return;
+    }
+
+    if (normalizedScreen == 'myattendancecalendar' ||
+        type == 'employee_attendance') {
+      navigatorKey.currentState?.pushNamed('/my-attendance-calendar');
+      return;
+    }
+
+    if (normalizedScreen == 'studentassignments' ||
+        type == 'student_assignment') {
+      navigatorKey.currentState?.pushNamed('/assignments');
+      return;
+    }
+
+    if (normalizedScreen == 'departmentmanagement' ||
+        type == 'department_task') {
+      navigatorKey.currentState?.pushNamed('/department-management');
+      return;
+    }
+
+    if (normalizedScreen == 'studentfees' || type == 'fee_payment_received') {
+      navigatorKey.currentState?.pushNamed('/fee-details');
+      return;
+    }
+
+    if ((normalizedScreen == 'diaryscreen' || type == 'student_diary') &&
+        diaryId.isNotEmpty) {
+      final navigator = await _waitForNavigator();
+      navigator?.push(
+        MaterialPageRoute(
+          builder: (_) => StudentDiaryScreen(initialDiaryId: diaryId),
+        ),
+      );
+      return;
+    }
+
+    if ((normalizedScreen == 'circularscreen' || type == 'circular') &&
+        circularId.isNotEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      final role = (prefs.getString('activeRole') ?? '').toLowerCase();
+      final staffRecipient = role.contains('teacher') ||
+          role.contains('coordinator') ||
+          role.contains('admin') ||
+          role.contains('principal');
+      final navigator = await _waitForNavigator();
+      navigator?.push(
+        MaterialPageRoute(
+          builder: (_) => staffRecipient
+              ? TeacherCircularsScreen(initialCircularId: circularId)
+              : StudentCircularsScreen(initialCircularId: circularId),
+        ),
+      );
       return;
     }
 
@@ -281,6 +341,16 @@ class NotificationService {
       }
       return;
     }
+  }
+
+  static Future<NavigatorState?> _waitForNavigator() async {
+    for (var attempt = 0; attempt < 50; attempt++) {
+      final navigator = navigatorKey.currentState;
+      if (navigator != null) return navigator;
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    debugPrint('⚠️ Notification navigation skipped: navigator not ready.');
+    return null;
   }
 
   /// Attempts to get an FCM token with limited retries. Returns null on failure.

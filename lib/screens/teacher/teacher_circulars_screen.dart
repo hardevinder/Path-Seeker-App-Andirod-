@@ -10,7 +10,9 @@ import '../../models/circular.dart';
 import '../../services/api_service.dart';
 
 class TeacherCircularsScreen extends StatefulWidget {
-  const TeacherCircularsScreen({super.key});
+  final String? initialCircularId;
+
+  const TeacherCircularsScreen({super.key, this.initialCircularId});
 
   @override
   State<TeacherCircularsScreen> createState() => _TeacherCircularsScreenState();
@@ -24,6 +26,7 @@ class _TeacherCircularsScreenState extends State<TeacherCircularsScreen> {
   String _sinceDays = '30'; // '7', '30', '90', 'all'
   final _searchController = TextEditingController();
   Timer? _debounce;
+  bool _initialCircularOpened = false;
 
   @override
   void initState() {
@@ -62,6 +65,7 @@ class _TeacherCircularsScreenState extends State<TeacherCircularsScreen> {
       if (_circulars.isEmpty && list.isNotEmpty) {
         _circulars = list;
       }
+      _openInitialCircularIfAvailable();
     } catch (e, st) {
       debugPrint('Error fetching circulars: $e\n$st');
       if (mounted) {
@@ -71,6 +75,18 @@ class _TeacherCircularsScreenState extends State<TeacherCircularsScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  void _openInitialCircularIfAvailable() {
+    if (_initialCircularOpened) return;
+    final targetId = (widget.initialCircularId ?? '').trim();
+    if (targetId.isEmpty) return;
+    final matches = _circulars.where((item) => item.id == targetId);
+    if (matches.isEmpty) return;
+    _initialCircularOpened = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _showFullView(matches.first);
+    });
   }
 
   List<Circular> get _processed {
