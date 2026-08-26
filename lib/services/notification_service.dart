@@ -198,6 +198,11 @@ class NotificationService {
     final type = (data['type'] ?? data['notification_type'] ?? '')
         .toString()
         .toLowerCase();
+    // EDUBRIDGE_SUPPORT_NOTIFICATION_V1
+    if (type == 'support_ticket' || normalizedScreen == 'supportcenter') {
+      navigatorKey.currentState?.pushNamed('/support-center');
+      return;
+    }
     if (type == 'visitor_request') {
       navigatorKey.currentState?.pushNamed('/my-visitors');
       return;

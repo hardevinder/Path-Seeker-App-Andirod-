@@ -1,0 +1,382 @@
+// lib/services/notification_service.dart
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../firebase_options.dart';
+import '../main.dart'; // navigatorKey
+import '../screens/student/student_bus_live_screen.dart';
+import '../screens/student/student_exam_seat_screen.dart';
+import '../screens/teacher/invigilation_duties_screen.dart';
+import '../screens/school_chat_screen.dart'; // SCHOOL_CHAT_V16_NOTIFICATION_IMPORT
+import '../screens/student_circulars_screen.dart';
+import '../screens/student_diary_screen.dart';
+import '../screens/teacher/teacher_circulars_screen.dart';
+
+class NotificationService {
+  static bool _firebaseEnsured = false;
+
+  static final FlutterLocalNotificationsPlugin _local =
+      FlutterLocalNotificationsPlugin();
+
+  static const AndroidNotificationChannel _androidChannel =
+      AndroidNotificationChannel(
+    'high_importance_channel', // MUST match backend channelId
+    'High Importance Notifications',
+    description:
+        'Used for important notifications (Diary, Circulars, Fee Reminders)',
+    importance: Importance.high,
+  );
+
+  /// Ensure Firebase is initialized. Safe to call multiple times.
+  static Future<void> ensureFirebaseInitialized() async {
+    if (_firebaseEnsured) return;
+
+    try {
+      if (Firebase.apps.isNotEmpty) {
+        _firebaseEnsured = true;
+        debugPrint('✅ Firebase already initialized (NotificationService)');
+        return;
+      }
+
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+      _firebaseEnsured = true;
+      debugPrint('✅ Firebase initialized by NotificationService');
+    } catch (e, st) {
+      debugPrint('⚠️ ensureFirebaseInitialized failed: $e\n$st');
+    }
+  }
+
+  /// Call this once (e.g., in main after Firebase init).
+  static Future<void> initialize({
+    required Future<void> Function(String token)
+        onToken, // ✅ pass backend save function
+  }) async {
+    await ensureFirebaseInitialized();
+
+    try {
+      final messaging = FirebaseMessaging.instance;
+
+      // Support check
+      bool supported = true;
+      try {
+        supported = await messaging.isSupported();
+      } catch (_) {
+        supported = true;
+      }
+      if (!supported) {
+        debugPrint('⚠️ Firebase Messaging not supported on this device.');
+        return;
+      }
+
+      // ✅ Request runtime permission (Android 13+, iOS)
+      final settings = await messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      debugPrint('🔐 Notification permission: ${settings.authorizationStatus}');
+
+      // ✅ Create Android channel (recommended)
+      await _initLocalNotificationsChannel();
+
+      // ✅ Get token and save it
+      final token = await getTokenSafe();
+      if (token != null) {
+        debugPrint('✅ FCM Token: $token');
+        await onToken(token); // ✅ send to backend / save
+      } else {
+        debugPrint('❌ FCM Token not available');
+      }
+
+      // ✅ Handle token refresh automatically
+      FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
+        debugPrint('🔄 FCM Token refreshed: $newToken');
+        await onToken(newToken);
+      });
+
+      // ✅ Foreground messages → show local notification
+      FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
+        debugPrint('📩 Foreground message: ${message.notification?.title}');
+        await _showLocalNotification(message);
+      });
+
+      // ✅ When user taps notification (app in background)
+      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+        debugPrint('👉 Notification tapped: ${message.data}');
+        _handleNotificationTap(message.data);
+      });
+
+      // ✅ When app launched from terminated by notification
+      final initial = await messaging.getInitialMessage();
+      if (initial != null) {
+        debugPrint('🚀 Opened from terminated notification: ${initial.data}');
+        _handleNotificationTap(initial.data);
+      }
+    } catch (e, st) {
+      debugPrint('🚨 NotificationService.initialize caught: $e\n$st');
+    }
+  }
+
+  static Future<void> _initLocalNotificationsChannel() async {
+    const AndroidInitializationSettings androidInit =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+
+    const InitializationSettings initSettings =
+        InitializationSettings(android: androidInit);
+
+    await _local.initialize(
+      initSettings,
+      onDidReceiveNotificationResponse: (resp) {
+        try {
+          final raw = resp.payload;
+          if (raw == null || raw.isEmpty) return;
+          final decoded = jsonDecode(raw);
+          if (decoded is Map<String, dynamic>) {
+            _handleNotificationTap(decoded);
+          } else if (decoded is Map) {
+            _handleNotificationTap(Map<String, dynamic>.from(decoded));
+          }
+        } catch (e) {
+          debugPrint('⚠️ Local notification payload parse failed: $e');
+        }
+      },
+    );
+
+    if (Platform.isAndroid) {
+      final androidImpl = _local.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      await androidImpl?.createNotificationChannel(_androidChannel);
+    }
+  }
+
+  static Future<void> _showLocalNotification(RemoteMessage message) async {
+    final title = message.notification?.title ?? 'New Message';
+    final body = message.notification?.body ?? '';
+
+    const AndroidNotificationDetails androidDetails =
+        AndroidNotificationDetails(
+      'high_importance_channel',
+      'High Importance Notifications',
+      importance: Importance.high,
+      priority: Priority.high,
+      playSound: true,
+    );
+
+    const NotificationDetails details =
+        NotificationDetails(android: androidDetails);
+
+    await _local.show(
+      DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      title,
+      body,
+      details,
+      payload: jsonEncode(message.data),
+    );
+  }
+
+  static Future<void> _handleNotificationTap(
+    Map<String, dynamic> data,
+  ) async {
+    final screen = (data['screen'] ?? '').toString();
+    final diaryId = (data['diaryId'] ?? data['diary_id'] ?? '').toString();
+    final circularId =
+        (data['circularId'] ?? data['circular_id'] ?? '').toString();
+    final paymentLink = (data['paymentLink'] ?? '').toString();
+
+    final normalizedScreen =
+        screen.toLowerCase().replaceAll(RegExp(r'[_ -]'), '');
+    final type = (data['type'] ?? data['notification_type'] ?? '')
+        .toString()
+        .toLowerCase();
+    if (type == 'visitor_request') {
+      navigatorKey.currentState?.pushNamed('/my-visitors');
+      return;
+    }
+    if (normalizedScreen == 'parentconsentscreen' ||
+        type == 'parent_consent_issued' ||
+        type == 'parent_consent_reminder') {
+      navigatorKey.currentState?.pushNamed('/parent-consents');
+      return;
+    }
+    if (normalizedScreen == 'documentvaultscreen' ||
+        normalizedScreen == 'officialissueddocumentsscreen' ||
+        type == 'official_document_issued') {
+      navigatorKey.currentState?.pushNamed('/official-documents');
+      return;
+    }
+    // SCHOOL_CHAT_V16_NOTIFICATION_ROUTE
+    if (normalizedScreen == 'schoolchatscreen' || type == 'school_chat') {
+      final rawThreadId = data['threadId'] ?? data['thread_id'];
+      final threadId = rawThreadId is int
+          ? rawThreadId
+          : int.tryParse('${rawThreadId ?? ''}');
+      navigatorKey.currentState?.push(
+        MaterialPageRoute(
+            builder: (_) => SchoolChatScreen(openThreadId: threadId)),
+      );
+      return;
+    }
+
+    if (normalizedScreen == 'studentbuslive' ||
+        normalizedScreen == 'bustracking' ||
+        normalizedScreen == 'studentbustracking' ||
+        type == 'bus_approaching' ||
+        type == 'busapproaching') {
+      navigatorKey.currentState?.push(
+        MaterialPageRoute(builder: (_) => const StudentBusLiveScreen()),
+      );
+      return;
+    }
+
+    if (normalizedScreen == 'examseatscreen' ||
+        type == 'exam_seat_published' ||
+        type == 'exam_attendance_updated') {
+      navigatorKey.currentState?.push(
+        MaterialPageRoute(builder: (_) => const StudentExamSeatScreen()),
+      );
+      return;
+    }
+
+    if (normalizedScreen == 'studentdatesheetscreen' ||
+        type == 'exam_datesheet_published') {
+      navigatorKey.currentState?.pushNamed('/student/date-sheet');
+      return;
+    }
+
+    if (normalizedScreen == 'invigilationdutiesscreen' ||
+        type == 'exam_invigilation_duty') {
+      navigatorKey.currentState?.push(
+        MaterialPageRoute(builder: (_) => const InvigilationDutiesScreen()),
+      );
+      return;
+    }
+
+    if (normalizedScreen == 'teachersubstitutions' ||
+        type == 'teacher_substitution') {
+      navigatorKey.currentState?.pushNamed('/teacher/substitutions');
+      return;
+    }
+
+    if (normalizedScreen == 'studentattendance' ||
+        type == 'student_attendance') {
+      navigatorKey.currentState?.pushNamed('/attendance');
+      return;
+    }
+
+    if (normalizedScreen == 'myattendancecalendar' ||
+        type == 'employee_attendance') {
+      navigatorKey.currentState?.pushNamed('/my-attendance-calendar');
+      return;
+    }
+
+    if (normalizedScreen == 'studentassignments' ||
+        type == 'student_assignment') {
+      navigatorKey.currentState?.pushNamed('/assignments');
+      return;
+    }
+
+    if (normalizedScreen == 'departmentmanagement' ||
+        type == 'department_task') {
+      navigatorKey.currentState?.pushNamed('/department-management');
+      return;
+    }
+
+    if (normalizedScreen == 'studentfees' || type == 'fee_payment_received') {
+      navigatorKey.currentState?.pushNamed('/fee-details');
+      return;
+    }
+
+    if ((normalizedScreen == 'diaryscreen' || type == 'student_diary') &&
+        diaryId.isNotEmpty) {
+      final navigator = await _waitForNavigator();
+      navigator?.push(
+        MaterialPageRoute(
+          builder: (_) => StudentDiaryScreen(initialDiaryId: diaryId),
+        ),
+      );
+      return;
+    }
+
+    if ((normalizedScreen == 'circularscreen' || type == 'circular') &&
+        circularId.isNotEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      final role = (prefs.getString('activeRole') ?? '').toLowerCase();
+      final staffRecipient = role.contains('teacher') ||
+          role.contains('coordinator') ||
+          role.contains('admin') ||
+          role.contains('principal');
+      final navigator = await _waitForNavigator();
+      navigator?.push(
+        MaterialPageRoute(
+          builder: (_) => staffRecipient
+              ? TeacherCircularsScreen(initialCircularId: circularId)
+              : StudentCircularsScreen(initialCircularId: circularId),
+        ),
+      );
+      return;
+    }
+
+    if (screen == 'payment_link' && paymentLink.isNotEmpty) {
+      try {
+        final uri = Uri.parse(paymentLink);
+        final opened = await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+        if (!opened) {
+          debugPrint('⚠️ Could not open payment link: $paymentLink');
+        }
+      } catch (e) {
+        debugPrint('⚠️ Payment link open failed: $e');
+      }
+      return;
+    }
+  }
+
+  static Future<NavigatorState?> _waitForNavigator() async {
+    for (var attempt = 0; attempt < 50; attempt++) {
+      final navigator = navigatorKey.currentState;
+      if (navigator != null) return navigator;
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    debugPrint('⚠️ Notification navigation skipped: navigator not ready.');
+    return null;
+  }
+
+  /// Attempts to get an FCM token with limited retries. Returns null on failure.
+  static Future<String?> getTokenSafe({
+    int maxRetries = 4,
+    Duration retryDelay = const Duration(seconds: 2),
+  }) async {
+    await ensureFirebaseInitialized();
+
+    final messaging = FirebaseMessaging.instance;
+    String? token;
+
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        token = await messaging.getToken();
+        if (token != null && token.isNotEmpty) {
+          debugPrint('✅ getTokenSafe success (attempt $attempt)');
+          return token;
+        }
+      } catch (e) {
+        debugPrint('⚠️ getTokenSafe attempt $attempt failed: $e');
+      }
+      await Future.delayed(retryDelay);
+    }
+
+    debugPrint('❌ getTokenSafe: failed after $maxRetries attempts');
+    return null;
+  }
+}

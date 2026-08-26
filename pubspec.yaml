@@ -3,9 +3,9 @@ description: "Seth Malook Chand International School app"
 publish_to: "none"
 
 # UPDATED for Play Store release
-# versionName = 1.0.51
-# versionCode = 73
-version: 1.0.51+73
+# versionName = 1.0.52
+# versionCode = 74
+version: 1.0.52+74
 environment:
   sdk: ">=3.4.1 <4.0.0"
 

@@ -592,6 +592,14 @@ class _TeacherDrawerMenuState extends State<TeacherDrawerMenu> {
                 ),
                 _tile(
                   context: context,
+                  routeName: '/support-center',
+                  icon: Icons.support_agent_rounded,
+                  title: 'Help & Support',
+                  color: const Color(0xFF2563EB),
+                  subtitle: 'Raise and track Edubridge support tickets',
+                ), // EDUBRIDGE_SUPPORT_TEACHER_DRAWER_V1
+                _tile(
+                  context: context,
                   routeName: '/change-password',
                   icon: Icons.key_rounded,
                   title: 'Change Password',

@@ -18,6 +18,7 @@ import 'screens/login_screen.dart';
 import 'screens/role_selection_screen.dart';
 import 'screens/dashboard_screen.dart' as dashboard;
 import 'screens/common/change_password_screen.dart'; // CHANGE_PASSWORD_MOBILE_V1
+import 'screens/common/support_center_screen.dart'; // EDUBRIDGE_SUPPORT_MOBILE_V1
 import 'screens/coordinator_dashboard.dart';
 import 'screens/coordinator_attendance_summary_screen.dart';
 import 'screens/coordinator_academic_calendar_screen.dart';
@@ -337,6 +338,7 @@ class StudentApp extends StatelessWidget {
           '/choose-role': (context) => const RoleSelectionScreen(),
           '/dashboard': (context) => dashboard.DashboardScreen(),
           '/change-password': (context) => const ChangePasswordScreen(), // CHANGE_PASSWORD_MOBILE_ROUTE_V1
+          '/support-center': (context) => const SupportCenterScreen(), // EDUBRIDGE_SUPPORT_MOBILE_V1
 
           // Teacher
           '/teacher': (context) => const TeacherDashboard(),

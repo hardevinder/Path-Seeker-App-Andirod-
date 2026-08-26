@@ -418,11 +418,12 @@ class _StudentDrawerMenuState extends State<StudentDrawerMenu> {
                 ),
                 _tile(
                   context: context,
-                  routeName: '/help',
-                  icon: Icons.help_rounded,
+                  routeName: '/support-center',
+                  icon: Icons.support_agent_rounded,
                   title: 'Help & Support',
-                  color: const Color(0xFF4A90E2),
-                ),
+                  color: const Color(0xFF2563EB),
+                  subtitle: 'Raise and track support tickets',
+                ), // EDUBRIDGE_SUPPORT_STUDENT_DRAWER_V1
                 const SizedBox(height: 8),
               ],
             ),

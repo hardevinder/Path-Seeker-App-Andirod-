@@ -449,6 +449,13 @@ class RoleDashboardDrawer extends StatelessWidget {
                   ),
                 _tile(
                   context: context,
+                  icon: Icons.support_agent_rounded,
+                  title: 'Help & Support',
+                  color: const Color(0xFF2563EB),
+                  routeName: '/support-center',
+                ), // EDUBRIDGE_SUPPORT_ROLE_DRAWER_V1
+                _tile(
+                  context: context,
                   icon: Icons.key_rounded,
                   title: 'Change Password',
                   color: const Color(0xFF7C3AED),
